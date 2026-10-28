@@ -1,0 +1,28 @@
+{
+  "generatedAt": 1791292231,
+  "nextChangeId": 1791291600,
+  "noOrdersHour": 1791288000,
+  "leagues": {
+    "Standard": {
+      "kind": "standard", "chaosVolume": 37500, "noOrders": [],
+      "pairs": {
+        "CurrencyModValues|CurrencyRerollRare": {"a": "CurrencyRerollRare", "b": "CurrencyModValues", "volA": 37500, "volB": 100, "hour": 1791288000, "dayA": 900000, "dayB": 2400, "recentA": 150000, "recentB": 400}
+      }
+    },
+    "Allflame": {
+      "kind": "challenge-softcore", "chaosVolume": 467600, "noOrders": ["CurrencyRerollSocketLinks>CurrencyModValues"],
+      "pairs": {
+        "CurrencyModValues|CurrencyRerollRare": {"a": "CurrencyRerollRare", "b": "CurrencyModValues", "volA": 375000, "volB": 1000, "hour": 1791288000, "dayA": 9000000, "dayB": 24000, "recentA": 1500000, "recentB": 4000},
+        "CurrencyRerollRare|CurrencyRerollSocketColours": {"a": "CurrencyRerollSocketColours", "b": "CurrencyRerollRare", "volA": 20000, "volB": 70000, "hour": 1791288000, "dayA": 2400000, "dayB": 1680000, "recentA": 400000, "recentB": 280000},
+        "CurrencyModValues|CurrencyRerollSocketColours": {"a": "CurrencyRerollSocketColours", "b": "CurrencyModValues", "volA": 100000, "volB": 1250, "hour": 1791288000, "dayA": 2400000, "dayB": 24000, "recentA": 400000, "recentB": 4000},
+        "CurrencyRerollRare|HarvestSeedGreen": {"a": "HarvestSeedGreen", "b": "CurrencyRerollRare", "volA": 30000, "volB": 3600, "hour": 1791288000, "dayA": 2400000, "dayB": 288000, "recentA": 400000, "recentB": 48000},
+        "CurrencyModValues|HarvestSeedGreen": {"a": "HarvestSeedGreen", "b": "CurrencyModValues", "volA": 50000, "volB": 18, "hour": 1791288000, "dayA": 1800000, "dayB": 642, "recentA": 300000, "recentB": 107},
+        "CurrencyDeepwater|CurrencyRerollRare": {"a": "CurrencyDeepwater", "b": "CurrencyRerollRare", "volA": 113000, "volB": 1000, "hour": 1791266400, "dayA": 0, "dayB": 0, "recentA": 0, "recentB": 0},
+        "CurrencyDeepwater|CurrencyModValues": {"a": "CurrencyDeepwater", "b": "CurrencyModValues", "volA": 350000, "volB": 10, "hour": 1791266400, "dayA": 0, "dayB": 0, "recentA": 0, "recentB": 0},
+        "CurrencyRerollRare|CurrencyUpgradeToRare": {"a": "CurrencyUpgradeToRare", "b": "CurrencyRerollRare", "volA": 10000, "volB": 12000, "hour": 1791288000, "dayA": 240000, "dayB": 288000, "recentA": 40000, "recentB": 48000},
+        "CurrencyModValues|CurrencyUpgradeToRare": {"a": "CurrencyUpgradeToRare", "b": "CurrencyModValues", "volA": 20000, "volB": 100, "hour": 1791288000, "dayA": 480000, "dayB": 2400, "recentA": 80000, "recentB": 400},
+        "CurrencyRerollRare|CurrencyRerollSocketLinks": {"a": "CurrencyRerollSocketLinks", "b": "CurrencyRerollRare", "volA": 4000, "volB": 6000, "hour": 1791288000, "dayA": 96000, "dayB": 144000, "recentA": 16000, "recentB": 24000}
+      }
+    }
+  }
+}

@@ -1,0 +1,118 @@
+name: 'Deploy'
+
+# On merge to main, deploy whatever changed: job/ -> the rates Lambda, html/ (or deploy.sh) -> the site.
+# Run it by hand to deploy both. Each site deploy is a release: tagged and published on GitHub as YYYY-MM-DD-N (UTC
+# date, N counting that day's releases from 1), the version ?debug's log and Download reads name. Only public actions are
+# used: the GitHub deployment is recorded with gh api, and the AWS role comes from the repo secret AWS_DEPLOY_ROLE (a secret,
+# not a variable, so its account id is masked wherever the logs would show it).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write # the release's tag and GitHub release
+  deployments: write
+
+# One deploy at a time, in merge order: a run waits for the one before it. GitHub keeps one waiting run per group and
+# cancels an older waiting one when another arrives, so what changed is taken from the last deploy that succeeded (the
+# `deployed` tag), not the push before: a cancelled run's changes go out with the next.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: What changed
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "job=true" >> "$GITHUB_OUTPUT"
+            echo "site=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          since=$(git rev-parse -q --verify refs/tags/deployed || echo "${{ github.event.before }}")
+          files=$(git diff --name-only "$since" "${{ github.sha }}")
+          echo "$files"
+          echo "job=$(grep -q '^job/' <<<"$files" && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "site=$(grep -qE '^(html/|deploy\.sh$)' <<<"$files" && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Version
+        id: version
+        if: steps.changes.outputs.site == 'true'
+        run: |
+          git fetch --tags --quiet
+          day=$(date -u +%F)
+          last=$(git tag -l "$day-*" | sed "s/^$day-//" | grep -E '^[0-9]+$' | sort -n | tail -1)
+          echo "version=$day-$(( ${last:-0} + 1 ))" >> "$GITHUB_OUTPUT"
+
+      - name: Start Deployment
+        id: deployment_info
+        if: steps.changes.outputs.job == 'true' || steps.changes.outputs.site == 'true'
+        run: |
+          id=$(jq -n --arg ref "$GITHUB_SHA" '{ref: $ref, environment: "production", auto_merge: false, required_contexts: []}' \
+            | gh api "repos/$GITHUB_REPOSITORY/deployments" --input - -q .id)
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -f state=in_progress > /dev/null
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Authenticate to AWS
+        if: steps.changes.outputs.job == 'true' || steps.changes.outputs.site == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+
+      - name: Set up Node (calc tests)
+        if: steps.changes.outputs.site == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Deploy rates job
+        if: steps.changes.outputs.job == 'true'
+        run: ./deploy.sh job
+
+      - name: Deploy site
+        if: steps.changes.outputs.site == 'true'
+        run: ./deploy.sh site
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Release
+        if: steps.changes.outputs.site == 'true'
+        run: gh release create "$VERSION" --target "${{ github.sha }}" --title "$VERSION" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Mark deployed
+        if: ${{ !cancelled() && !failure() }}
+        run: |
+          git tag -f deployed "${{ github.sha }}"
+          git push -f origin refs/tags/deployed
+
+      - name: Report Deployment failure
+        if: ${{ (cancelled() || failure()) && steps.deployment_info.outputs.id }}
+        run: gh api "repos/$GITHUB_REPOSITORY/deployments/$ID/statuses" -f state=failure > /dev/null
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ID: ${{ steps.deployment_info.outputs.id }}
+
+      - name: Report Deployment success
+        if: ${{ !cancelled() && !failure() && steps.deployment_info.outputs.id }}
+        run: gh api "repos/$GITHUB_REPOSITORY/deployments/$ID/statuses" -f state=success > /dev/null
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ID: ${{ steps.deployment_info.outputs.id }}

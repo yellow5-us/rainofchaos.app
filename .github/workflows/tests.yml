@@ -1,0 +1,79 @@
+name: 'Tests'
+
+# Run by hand on a branch (Actions tab, Run workflow; or `gh workflow run tests.yml --ref <branch>`): the page checks
+# and calc tests in Firefox and Chrome, the calc tests in JavaScriptCore (Bun's engine), and the rates job's tests. The
+# readers' tests (snip, rows) run too when the branch changes image-reading code, its data or the test frames since it
+# left main.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer run on the same branch cancels the one before it.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, chrome]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Suites
+        id: suites
+        run: |
+          base="$(git merge-base origin/main HEAD)"
+          if git diff --name-only "$base" HEAD | grep -qE '^(html/(js/(snip|rows|reader)\.js|data/glyphs\.json)|tests/((snip|rows)\.(html|test\.js)|lines\.json|snips/))'; then
+            echo "suites=all" >> "$GITHUB_OUTPUT"
+          else
+            echo "suites=pages,calc" >> "$GITHUB_OUTPUT"
+          fi
+
+      # importOffPage times the page's pauses during a read: the runners have no GPU (a video frame's bitmap is made on
+      # the CPU) and two cores shared with the reader's workers, so its pauses there (154 to 484 ms) say nothing.
+      - name: Page checks
+        run: python3 tools/pagecheck.py --browsers tools/browsers.ci.json --browser ${{ matrix.browser }} --suite ${{ steps.suites.outputs.suites }} --skip importOffPage --shots shots
+
+      - name: Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shots-${{ matrix.browser }}
+          path: shots
+
+  jsc:
+    name: javascriptcore
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Bun runs on JavaScriptCore (Ubuntu has no package with the jsc shell).
+      - name: Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Calc tests
+        run: |
+          out="$(bun tests/calc.test.js)"
+          echo "$out"
+          echo "$out" | tail -1 | grep -qx "all passed"
+
+  job:
+    name: rates job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Job tests
+        run: python3 -m unittest discover -s job -q

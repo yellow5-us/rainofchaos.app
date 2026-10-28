@@ -1,0 +1,421 @@
+:root {
+  --bg: #151514;
+  --panel: #1e1e1c;
+  --text: #ecebe7;
+  --muted: #9c9a94;
+  --line: #34332f;
+  --accent: #e0a63a;
+  --pos: #5cc77d;
+  --neg: #f07b72;
+  --done: #6ea4f2;
+  --rec: #ff5a4f;
+  --warn-bg: #3a2f14;
+  color-scheme: dark; /* dark only, whatever the system's setting */
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Pinned to the top as the page scrolls. */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.brand { font-weight: 700; color: var(--accent); text-decoration: none; font-size: 1.1rem; }
+/* The game and league switchers sit with the brand, small and quiet. */
+.brand-group { display: inline-flex; align-items: center; gap: 0.4rem; }
+#game, #league { font-size: 0.8rem; font-weight: 600; color: var(--accent); background: none; border: 1px solid var(--line);
+  border-radius: 999px; padding: 0.05rem 0.4rem; cursor: pointer; }
+nav { display: flex; gap: 1rem; }
+nav a { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--muted); text-decoration: none; }
+nav a svg { width: 1.05rem; height: 1.05rem; flex: none; }
+/* Only the icons, a little bigger, when the names would wrap the header (fitNav). */
+header.compact nav a span { display: none; }
+header.compact nav a svg { width: 1.3rem; height: 1.3rem; }
+/* A faint line between the links. */
+nav a + a { border-left: 1px solid var(--line); padding-left: 1rem; }
+nav a.active { color: var(--text); font-weight: 600; }
+/* Import Market Ratios, at the header's right on every page. */
+.imports { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-left: auto; }
+/* Support (Ko-fi), left of it: a quiet link, not a button. */
+a.support { display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 0.75rem; color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+a.support:hover { color: var(--accent); }
+a.support svg { width: 1rem; height: 1rem; }
+/* The import window's help button, in its title bar left of the ×: accent-coloured while its steps show. */
+dialog .head-actions { display: inline-flex; align-items: center; gap: 0.25rem; }
+dialog .head-actions button.help { display: inline-flex; border: 0; background: none; padding: 0.2rem; color: var(--muted); }
+button.help:hover, button.help[aria-pressed="true"] { color: var(--accent); }
+button.help svg { width: 1.225rem; height: 1.225rem; }
+ol.import-steps { margin: 0 0 0.75rem; padding-left: 1.4rem; }
+ol.import-steps li + li { margin-top: 0.25rem; }
+/* What a scan just changed on the page behind the import window: lit up in the accent colour, fading out. */
+.changed { animation: changed 4s ease-out both; }
+.other.changed { animation-name: changed-box; }
+@keyframes changed { from { background-color: color-mix(in srgb, var(--accent) 35%, transparent); } to { background-color: transparent; } }
+@keyframes changed-box { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 3px transparent; } }
+.back { margin: 0 0 0.25rem; font-size: 0.9rem; }
+.back a { color: var(--muted); text-decoration: none; }
+.back a:hover { color: var(--accent); text-decoration: underline; }
+.start { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.start input { width: calc(6ch + 2.2rem); } /* up to 6 digits, plus padding and the spinner */
+.base-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.base-toggle button { display: inline-flex; border: 0; border-radius: 0; padding: 0.15rem 0.4rem; background: none; }
+.base-toggle button + button { border-left: 1px solid var(--line); }
+.base-toggle button .icon { margin: 0; }
+.base-toggle button:not(.active) .icon { opacity: 0.4; }
+.base-toggle button.active { background: var(--accent); }
+.mode-pick { margin: 0 0 1rem; }
+.mode-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.mode-toggle a { padding: 0.3rem 0.9rem; color: var(--muted); text-decoration: none; }
+.mode-toggle a + a { border-left: 1px solid var(--line); }
+.mode-toggle a.active { background: var(--accent); color: var(--panel); font-weight: 600; }
+
+main { max-width: 64rem; margin: 0 auto; padding: 1rem; }
+h1 { font-size: 1.4rem; margin: 0.5rem 0; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+/* Trade Recommendations' tables: the heading, with its count after a chevron, opens and closes each one. */
+details.section > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
+details.section > summary::-webkit-details-marker { display: none; }
+details.section > summary::before { content: ""; width: 0.45rem; height: 0.45rem; border: solid currentColor; border-width: 0 2px 2px 0;
+  rotate: -45deg; margin-left: 0.1rem; transition: rotate 0.15s; }
+details.section[open] > summary::before { rotate: 45deg; }
+details.section > summary h2 { margin: 0; }
+details.section > summary h2 .muted { font-weight: normal; }
+a { color: var(--accent); }
+
+.muted { color: var(--muted); }
+.guide { line-height: 1.6; } /* as wide as every other page */
+.guide section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 0.25rem 1.25rem 0.5rem; margin: 1rem 0; }
+.guide h2 { color: var(--accent); margin: 0.75rem 0 0.75rem; padding-bottom: 0.35rem; border-bottom: 2px solid var(--accent); }
+.guide li { margin: 0.3rem 0; }
+.guide .disclaimer {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin: 0.5rem 0 0; padding: 0.6rem 1rem;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
+}
+/* The disclaimer's info icon, before its text. */
+.guide .disclaimer .info { flex: none; width: 1.25rem; height: 1.25rem; color: var(--accent); }
+.icon { width: 1.4em; height: 1.4em; vertical-align: -0.35em; margin: 0 0.15em; }
+.icon:first-child { margin-left: 0; } /* line up with text above, e.g. table headers */
+.icon.unit { margin-left: 0.15em; } /* after a ratio's number: first in its cell, but not leading it */
+h1 .icon { width: 1.6em; height: 1.6em; margin-right: 0.35em; }
+h3 .sep { margin: 0 1.1rem; color: var(--muted); } /* between a route box's profit, per minute, fill time and gold */
+.listing-meta .apart { margin-left: 1.75rem; } /* room between a listing's starting amount and its profits */
+/* The item page's volume, beside its heading but in body text style. */
+h1 .item-volume { margin-left: 0.75rem; font-size: 0.9rem; font-weight: normal; vertical-align: middle; }
+h1 .item-volume .icon { width: 1.4em; height: 1.4em; margin: 0 0.15em; }
+.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.profit { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.gold { color: var(--accent); white-space: nowrap; font-size: 0.9em; }
+
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; background: var(--panel); }
+th, td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { font-size: 0.85rem; color: var(--muted); font-weight: 600; }
+
+/* Trade summaries: each row stays one line high. Route, profit, gold, fill time and profit per minute never wrap; the
+   item name takes the slack and wraps instead. Too wide for the screen, the .scroll wrapper scrolls. */
+table.summary th, table.summary td { white-space: nowrap; }
+table.summary td:first-child { white-space: normal; min-width: 10rem; }
+/* The scan age tag right after the item, left-aligned so the tags line up. */
+table.summary .age { width: 1%; padding-left: 0; }
+table.steps { margin-top: 0.75rem; width: auto; min-width: 100%; }
+/* Headings and each row's cells sit on their bottom line, so taller ones (buttons, dropdowns) don't lift the others' text. */
+table.steps th, table.steps td { white-space: nowrap; vertical-align: bottom; }
+/* Want and Have are as wide on every steps table, so the columns line up from one listing to the next. */
+table.steps th:nth-child(2), table.steps th:nth-child(3) { width: 10.5rem; }
+/* After a cancelled step's Have, how much of it filled: on its line, never wrapping. */
+.filled { color: var(--muted); font-weight: normal; white-space: nowrap; }
+/* Want / Have amounts copy their number on click (app.js); "copied" flashes a highlight. */
+/* Cursor: the usual copy icon, two overlapping pages (the back one grey, the front white) with a dark outline
+   so it shows on both themes; the hand if custom cursors aren't supported. */
+.copy {
+  cursor: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2224%22%20height=%2224%22%20viewBox=%220%200%2024%2024%22%3E%3Crect%20x=%223%22%20y=%223%22%20width=%2212%22%20height=%2214%22%20rx=%222%22%20fill=%22%23c8c8c8%22%20stroke=%22%23222%22%20stroke-width=%221.6%22/%3E%3Crect%20x=%229%22%20y=%227%22%20width=%2212%22%20height=%2214%22%20rx=%222%22%20fill=%22%23fff%22%20stroke=%22%23222%22%20stroke-width=%221.6%22/%3E%3C/svg%3E") 12 12, pointer;
+  border-radius: 3px; transition: background-color 0.2s;
+}
+.copy:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.copy.copied { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+/* From the first main trade with a problem (can't trade a lot, no orders, thin stock) to the end. */
+table.steps tr:has(+ tr.hint-row) td { border-bottom: 0; }
+table.steps tr.hint-row td { padding-top: 0; }
+.hint-line { display: flex; align-items: center; justify-content: flex-end; gap: 0.6rem; font-size: 0.85rem; color: var(--pos); }
+.hint-line button { font-size: 0.8rem; padding: 0.05rem 0.5rem; }
+.hint-line button.go { background: var(--pos); border-color: var(--pos); color: var(--panel); font-weight: 600; }
+table.steps tr.bad td { background: color-mix(in srgb, var(--neg) 16%, var(--panel)); }
+
+.other {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem 1.25rem;
+  margin: 1.75rem 0;
+}
+.other.top { border: 2px solid var(--accent); }
+.other h3 { margin: 0; font-size: 1rem; flex: 1; }
+.other.losing { opacity: 0.55; }
+.other.losing:hover, .other.losing:focus-within { opacity: 0.85; }
+/* A route's fold: its line (with a chevron, as Trade Recommendations' tables have) opens and closes its steps. */
+details.other > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.6rem; }
+details.other > summary::-webkit-details-marker { display: none; }
+details.other > summary::before { content: ""; flex: none; width: 0.45rem; height: 0.45rem; border: solid currentColor;
+  border-width: 0 2px 2px 0; rotate: -45deg; margin-left: 0.1rem; transition: rotate 0.15s; }
+details.other[open] > summary::before { rotate: 45deg; }
+details.other[open] > summary { margin-bottom: 0.5rem; }
+/* A route that can't be done (no or too little stock, a unit over the limit): its steps folded under a line saying why. */
+details.route-steps > summary { cursor: pointer; margin: 0.6rem 0 0.2rem; font-size: 0.9rem; }
+h3.split { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; }
+/* My Listings (SPEC.md §4.6): Mark As Completed, under the steps at the right. */
+button.complete { background: var(--pos); border-color: var(--pos); color: var(--panel); }
+/* Above each listing's box: what it started with on the left, when it was added on the right. */
+.listing { margin: 1.75rem 0; }
+.listing > .other { margin: 0.35rem 0 0; }
+.listing-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; font-size: 0.9rem; }
+.listing-times { font-weight: 600; } /* when a listing was added (and completed), at the right */
+.listing-times .range-dash { margin: 0 0.4rem; color: var(--muted); }
+.listing-foot { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; margin-top: 0.6rem; }
+.count-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; height: 1.5rem; padding: 0 0.45rem;
+  border-radius: 999px; background: var(--warn-bg); color: var(--accent); font-size: 0.8rem; font-weight: 700; text-decoration: none; }
+/* The buttons' column hugs the table's right edge, which every listing's box shares, so they line up across listings. */
+.step-states { white-space: nowrap; text-align: right; width: 1%; }
+/* A step's play button, cancel and check: a grey outline with its icon in the text colour (even when it can't be clicked)
+   until on, then filled in: green once started, blue once done. One that can be clicked and isn't on fills faintly under
+   the mouse. */
+.step-buttons { display: inline-flex; gap: 0.3rem; }
+button.step-check { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; padding: 0;
+  border-radius: 6px; color: var(--text); border-color: var(--muted); }
+button.step-check svg { width: 0.8rem; height: 0.8rem; }
+button.step-check.on { background: var(--pos); border-color: var(--pos); color: var(--panel); }
+button.step-check.on[data-listing-check] { background: var(--done); border-color: var(--done); }
+button.step-check:disabled { opacity: 1; }
+button.step-check:not(:disabled):not(.on):hover { background: color-mix(in srgb, var(--text) 9%, var(--bg)); border-color: var(--text); }
+/* The Cancelled box: small, floating over the page beside the cancel button that opened it (app.js places it). */
+.cancel-box { position: fixed; z-index: 20; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25); padding: 0.45rem 0.6rem 0.55rem; font-size: 0.8rem; white-space: nowrap; }
+.cancel-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 0.4rem; padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--line); }
+.cancel-head h4 { margin: 0; font-size: 0.8rem; font-weight: 600; }
+button.cancel-close { border: 0; background: none; padding: 0 0.1rem; font-size: 0.95rem; line-height: 1; color: var(--muted); }
+button.cancel-close:hover { color: var(--text); }
+.cancel-box form { display: flex; align-items: center; gap: 0.3rem; margin: 0; }
+.cancel-box input { width: 3.25rem; padding: 0.1rem 0.3rem; font-size: 0.8rem; appearance: textfield; -moz-appearance: textfield; }
+.cancel-box input::-webkit-inner-spin-button, .cancel-box input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.cancel-box input[aria-invalid="true"] { border-color: var(--neg); }
+.cancel-box label { margin-left: 0.2rem; }
+tr.losing { opacity: 0.5; }
+
+.tag { display: inline-block; padding: 0 0.4rem; border-radius: 4px; font-size: 0.8rem; }
+.tag.manual { background: var(--line); color: inherit; text-decoration: none; }
+a.tag.manual:hover { background: var(--accent); color: var(--panel); }
+.tag.verified { background: var(--pos); color: var(--panel); text-decoration: none; font-weight: 600; }
+a.tag.verified:hover { opacity: 0.85; }
+/* After a currency's name (an item page's heading): a little room from the name. */
+h1 > .tag.verified, h1 > .tag.manual { margin-left: 0.3rem; }
+button.reset { padding: 0.1rem 0.5rem; font-size: 0.85rem; }
+.tag.warn { background: var(--warn-bg); }
+
+/* A ratio's cells (app.js ratioCells): icon, number, colon, number, icon, tags. Each is its own column, so every row's
+   parts line up; the numbers sit close to the colon and the icons to their numbers. */
+td.r-icon, td.r-num, td.r-colon, td.r-none { white-space: nowrap; padding-inline: 0; font-variant-numeric: tabular-nums;
+  width: 1px; } /* as narrow as they go: a wide table's spare room goes to the tags */
+td.r-num { font-weight: 600; }
+td.r-end { text-align: right; }
+td.r-colon { text-align: center; padding-inline: 0.3rem; }
+td.r-none { text-align: center; }
+td.r-icon .icon { margin: 0; }
+td.r-icon.r-end { padding-left: 0.6rem; padding-right: 0.3rem; }
+td.r-icon:not(.r-end) { padding-left: 0.3rem; }
+td.r-tags { white-space: nowrap; padding-left: 0.5rem; }
+.live-last td.r-icon.r-end { padding-left: 0; }
+table.volumes .age { width: 1%; white-space: nowrap; padding-left: 0.3rem; }
+table.volumes .num:has(+ .age) { padding-right: 0; }
+table.ratios .vol { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.ratios tr.group th { padding-top: 1.5rem; color: var(--text); font-size: 0.95rem; border-bottom: 1px solid var(--line); }
+table.ratios tbody:first-of-type tr.group th { padding-top: 0.6rem; }
+.group-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 1rem; }
+.group-head a { color: inherit; text-decoration: none; } /* a heading that links, not a blue link */
+.group-head a:hover { color: var(--accent); text-decoration: underline; }
+.group-head .muted { font-weight: 400; font-size: 0.85rem; text-align: right; }
+
+input, select, button, .button {
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.2rem 0.4rem;
+}
+button, .button { cursor: pointer; padding: 0.3rem 0.8rem; }
+button.danger { border-color: var(--neg); color: var(--neg); }
+
+.clear-all { margin: 0 0 1rem; }
+.confirm {
+  background: var(--warn-bg);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+  margin: 0.5rem 0 1rem;
+}
+.confirm .choices { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+
+.ratio-link {
+  background: none;
+  border: 0;
+  border-bottom: 1px dashed var(--muted);
+  border-radius: 0;
+  padding: 0;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ratio-link:hover { border-bottom-color: var(--accent); color: var(--accent); }
+dialog {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  max-width: min(56rem, calc(100vw - 2rem));
+  position: relative;
+  padding-top: 2.25rem;
+}
+dialog::backdrop { background: rgb(0 0 0 / 0.7); }
+/* A pair's prices (opened from a step's Ratio): at least 43rem, room for its two columns and their tags. */
+#ratio-dialog { min-width: min(43rem, calc(100vw - 2rem)); }
+dialog .close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  border: 0;
+  background: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+  color: var(--muted);
+}
+dialog .close:hover { color: var(--text); }
+/* Import Market Ratios fills in the page behind it: docked at the top right just below the header, not modal, so the page
+   stays in clear view and usable. */
+dialog.live { position: fixed; inset: calc(var(--below-header, 0px) + 0.25rem) 1rem auto auto; margin: 0; z-index: 10; padding: 0;
+  border: 0; background: none; overflow: visible; display: flex; align-items: flex-start; transition: transform 0.18s ease; }
+dialog.live .live-window { padding: 0.75rem 1.25rem 1rem; width: min(26rem, calc(100vw - 4rem)); max-height: calc(100vh - var(--below-header, 0px) - 1.25rem);
+  overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 6px 24px rgb(0 0 0 / 0.35); }
+/* Hidden to its strip: the window slides off the right edge (still on the page and playing, as the reads take their
+   frames from its preview), leaving the strip against the edge. */
+dialog.live.collapsed { transform: translateX(calc(100% - 1.6rem + 1rem)); }
+dialog.live.collapsed .live-window { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { dialog.live { transition: none; } }
+/* The strip on the window's left edge: the recording light above the arrow that hides and shows it. */
+button.live-tab { flex: none; width: 1.6rem; height: 4.5rem; margin-top: 0.75rem; padding: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 0.55rem; background: var(--panel); border: 1px solid var(--line); border-right: 0;
+  border-radius: 6px 0 0 6px; box-shadow: -3px 4px 12px rgb(0 0 0 / 0.25); color: var(--text); font-size: 1rem; line-height: 1; }
+dialog.live.collapsed button.live-tab { border-right: 1px solid var(--line); }
+.rec-light { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--line); }
+.rec-light.on { background: var(--rec); animation: rec-pulse 2.4s ease-in-out infinite; }
+.rec-light.lost { background: var(--rec); }
+@keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .rec-light.on { animation: none; } }
+/* The import window's stop button (while it shares): its square in a circle, as big as the help button before it; grey
+   like it, red under the mouse. */
+dialog .close.stop { display: inline-flex; padding: 0.2rem; color: var(--muted); }
+dialog .close.stop:hover { color: var(--neg); }
+dialog .close.stop svg { width: 1.225rem; height: 1.225rem; display: block; }
+/* The record button, where the stop button goes until it shares: a red dot in a grey circle, the circle darker under the
+   mouse. */
+dialog .close.record { display: inline-flex; padding: 0.2rem; color: var(--muted); }
+dialog .close.record:hover { color: var(--text); }
+dialog .close.record svg { width: 1.225rem; height: 1.225rem; display: block; }
+.record-dot { fill: var(--rec); }
+/* Its title bar's buttons sit on the bottom of the title's text (its baseline). */
+dialog.live .dialog-head { align-items: flex-end; }
+dialog.live .dialog-head h2 { line-height: 1; }
+dialog.live .head-actions { margin-bottom: -0.075rem; }
+/* Import Market Ratios' preview before the shared window shows: its size and place, muted. */
+.live-image.preview-wait { width: min(560px, 100%); aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--muted) 12%, transparent); color: var(--muted); }
+.preview-wait svg { width: 22%; height: auto; opacity: 0.7; }
+/* A dialog's title bar: the name, with the × (the import window's stop and help buttons) at the right, over a line. */
+dialog .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  margin: 0 -0.5rem 0.75rem 0; padding-bottom: 0.5rem; border-bottom: 1px solid var(--line); }
+dialog .dialog-head h2 { margin: 0; font-size: 1.2rem; }
+dialog .dialog-head .close { position: static; }
+dialog .dialog-title { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem; }
+.live-status, .load-error { display: flex; align-items: center; gap: 0.4rem; }
+.live-status svg, .load-error svg { flex: none; width: 1.25rem; height: 1.25rem; }
+.load-error { color: var(--neg); font-weight: 600; }
+/* Import Market Ratios' panel (SPEC.md §4.7): right under the title bar. */
+tr.live-panel td { padding: 0 0 0.75rem; }
+.live-box { padding: 0 1rem; margin-bottom: 0.5rem; color: var(--muted); }
+.live-box p { margin: 0 0 0.35rem; }
+/* The status line, first in the panel: one place and one look for all of them; errors in red. */
+tr.live-panel p.live-status { margin: 0 0 1.25rem; color: var(--accent); font-weight: 600; }
+tr.live-panel p.live-status-error { color: var(--neg); }
+/* A status there for screen readers only. */
+tr.live-panel p.live-status.quiet { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* A status that needs a look: the warning sign after it. */
+tr.live-panel p.live-status .warn-sign { width: 1.1em; height: 1.1em; vertical-align: -0.2em; margin-left: 0.35em; }
+tr.live-panel p.live-status .icon { vertical-align: -0.35em; margin: 0; }
+tr.live-panel td > :first-child { margin-top: 0; }
+tr.live-panel td > :last-child { margin-bottom: 0; }
+/* While watching, the shared window (and its stand-in): one size (PREVIEW_W in app.js) and one look. */
+.live-image { display: block; max-width: 100%; border-radius: 4px; margin: 0.25rem 0 0.5rem; }
+.live-preview { margin-top: 1rem; height: auto; }
+dialog .dialog-pair + .dialog-pair tr.group th { padding-top: 1.25rem; }
+dialog tr.group th { border-bottom: 0; padding-left: 0; }
+th .ratio-link { font: inherit; color: inherit; margin-bottom: -1px; } /* its dashed underline below the line, so its text sits on the headings' line */
+select.method { padding: 0.1rem 0.3rem; font-size: 0.9rem; }
+#search { width: min(24rem, 100%); }
+/* A Manual step's ratio: both numbers shaded, each a box once clicked, then its reset. */
+.manual-edit { font: inherit; color: inherit; background: color-mix(in srgb, var(--accent) 18%, transparent); border: 0;
+  border-radius: 4px; padding: 0 0.3rem; cursor: text; font-variant-numeric: tabular-nums; }
+.manual-edit:hover { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.manual-ratio .reset { margin-left: 0.5rem; }
+#manual-ratio { width: 4.5rem; font: inherit; font-variant-numeric: tabular-nums; padding: 0 0.3rem; }
+button:disabled { opacity: 0.45; cursor: default; }
+/* Tabs under a page heading, e.g. Imported Ratios: Verified | Expired. */
+.tabs { display: flex; border-bottom: 1px solid var(--line); margin: 0.5rem 0 1rem; }
+.tabs a { padding: 0.4rem 1rem; margin-bottom: -1px; border: 1px solid transparent; border-bottom: 0;
+  border-radius: 6px 6px 0 0; color: var(--muted); text-decoration: none; }
+.tabs a.active { background: var(--panel); border-color: var(--line); color: var(--text); font-weight: 600; }
+.page-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem 1rem; }
+.page-head .actions { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-left: auto; } /* no heading: the nav names the page */
+/* Trade Recommendations' and item pages' Starting Amount: as tall as a button. */
+.page-head .start { align-items: stretch; min-height: calc(1lh + 0.6rem + 2px); gap: 0.4rem; }
+.page-head .start label { align-self: center; }
+.page-head .start .base-toggle button { align-items: center; }
+button.destructive { background: var(--neg); border-color: var(--neg); color: var(--panel); }
+.icon.unknown {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--line);
+  color: var(--muted);
+  font-size: 0.85em;
+  font-weight: 700;
+}
+.tags-below { margin-top: 0.2rem; }
+/* The tag's text, not its background, lines up with the value above (left or right aligned). */
+.tags-below .tag { margin-inline: -0.4rem; }
+button.sort { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+button.sort:hover, button.sort.active { color: var(--text); }
+.pager { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+/* Takes a label's room without showing it: split orders line up under their step's. */
+.ghost { visibility: hidden; }
+/* Import Market Ratios' latest pair read, under its status line. */
+.live-last { margin: 0.5rem 0 1rem; }
+.live-last th { text-align: left; font-weight: 600; color: var(--muted); padding: 0.2rem 1rem 0.2rem 0; }
+.live-last td { padding-block: 0.2rem; }

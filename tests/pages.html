@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>rainofchaos page checks</title>
+  <style>
+    body { font: 14px/1.4 ui-monospace, monospace; padding: 1rem; margin: 0; }
+    #results { list-style: none; padding: 0; white-space: pre-wrap; }
+    #results .fail { color: #c22; }
+    iframe { width: 1280px; height: 900px; border: 1px solid #888; }
+  </style>
+</head>
+<body>
+  <!-- The app's pages checked one by one (pages/checks.js), with the fixture rates: serve with
+       `python3 tools/serve.py --fixtures`. ?only=name,... runs some. tools/pagecheck.py runs this in each browser. -->
+  <ul id="results"></ul>
+  <div id="stage"></div>
+  <script type="module" src="pages/run.js"></script>
+</body>
+</html>

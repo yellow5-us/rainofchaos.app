@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>rainofchaos snip tests</title>
+  <style>body { font: 14px/1.4 ui-monospace, monospace; white-space: pre; padding: 1rem; }</style>
+</head>
+<body>
+  <button id="build" type="button">Download glyphs.json and lines.json</button>
+  <script>
+    console.log = (...a) => document.body.append(a.join(" ") + "\n");
+    document.getElementById("build").addEventListener("click", () => {
+      for (const [name, json] of Object.entries(buildGlyphs())) {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([json + "\n"], { type: "application/json" }));
+        a.download = name;
+        a.click();
+      }
+    });
+  </script>
+  <script type="module" src="snip.test.js"></script>
+</body>
+</html>

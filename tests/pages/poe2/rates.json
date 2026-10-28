@@ -1,0 +1,24 @@
+{
+  "generatedAt": 1791292231,
+  "nextChangeId": 1791291600,
+  "noOrdersHour": 1791288000,
+  "leagues": {
+    "Standard": {
+      "kind": "standard", "chaosVolume": 1000, "noOrders": [],
+      "pairs": {
+        "CurrencyAddModToRare|CurrencyRerollRare": {"a": "CurrencyAddModToRare", "b": "CurrencyRerollRare", "volA": 65000, "volB": 1000, "hour": 1791288000, "dayA": 1560000, "dayB": 24000, "recentA": 260000, "recentB": 4000}
+      }
+    },
+    "Forbidden Rites": {
+      "kind": "challenge-softcore", "chaosVolume": 21650, "noOrders": [],
+      "pairs": {
+        "CurrencyAddModToRare|CurrencyRerollRare": {"a": "CurrencyAddModToRare", "b": "CurrencyRerollRare", "volA": 650000, "volB": 10000, "hour": 1791288000, "dayA": 15600000, "dayB": 240000, "recentA": 2600000, "recentB": 40000},
+        "CurrencyAddModToRare|CurrencyModValues": {"a": "CurrencyAddModToRare", "b": "CurrencyModValues", "volA": 684000, "volB": 1000, "hour": 1791288000, "dayA": 16416000, "dayB": 24000, "recentA": 2736000, "recentB": 4000},
+        "CurrencyModValues|CurrencyRerollRare": {"a": "CurrencyRerollRare", "b": "CurrencyModValues", "volA": 10500, "volB": 1000, "hour": 1791288000, "dayA": 252000, "dayB": 24000, "recentA": 42000, "recentB": 4000},
+        "CurrencyAddModToRare|CurrencyRemoveMod": {"a": "CurrencyRemoveMod", "b": "CurrencyAddModToRare", "volA": 2000, "volB": 300000, "hour": 1791288000, "dayA": 48000, "dayB": 7200000, "recentA": 8000, "recentB": 1200000},
+        "CurrencyRemoveMod|CurrencyRerollRare": {"a": "CurrencyRemoveMod", "b": "CurrencyRerollRare", "volA": 500, "volB": 1150, "hour": 1791288000, "dayA": 12000, "dayB": 27600, "recentA": 2000, "recentB": 4600},
+        "CurrencyModValues|CurrencyRemoveMod": {"a": "CurrencyRemoveMod", "b": "CurrencyModValues", "volA": 1000, "volB": 220, "hour": 1791288000, "dayA": 24000, "dayB": 5280, "recentA": 4000, "recentB": 880}
+      }
+    }
+  }
+}

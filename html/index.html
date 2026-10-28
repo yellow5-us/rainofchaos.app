@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>rainofchaos</title>
+  <script>
+    // This page is served at /poe1 and /poe2 (the game comes from the address, js/game.js) and at /, which
+    // goes to the last game used, Path of Exile 1 by default.
+    if (location.pathname === "/" || location.pathname === "/index.html") {
+      let g = "poe1";
+      try { if (localStorage.getItem("rainofchaos:game") === "poe2") g = "poe2"; } catch { /* storage blocked */ }
+      location.replace(`/${g}${location.hash}`);
+    }
+  </script>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/css/style.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <header>
+    <span class="brand-group">
+      <a class="brand" href="#/home">rainofchaos</a>
+      <select id="game" aria-label="Game" title="Switch game">
+        <option value="poe1">PoE1</option>
+        <option value="poe2">PoE2</option>
+      </select>
+      <label class="league" hidden><select id="league" aria-label="League" title="League"></select></label>
+    </span>
+    <!-- Each page's icon and name; only the icons (names on hover) when the names would wrap the header. -->
+    <nav>
+      <a href="#/home"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/></svg><span>Home</span></a>
+      <a href="#/trade-recommendations"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg><span>Trade Recommendations</span></a>
+      <a href="#/my-listings"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><path d="M9 12h6M9 16h6"/></svg><span>My Listings</span></a>
+      <a href="#/imported-ratios"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v16M5 20h14"/><path d="M4 8h16"/><path d="M4 8l-2.5 6a3 3 0 0 0 5 0z"/><path d="M20 8l-2.5 6a3 3 0 0 0 5 0z"/></svg><span>Imported Ratios</span></a>
+      <a href="#/trade-volumes"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20V12M10 20V6M15 20v-9M20 20V9"/></svg><span>Trade Volumes</span></a>
+    </nav>
+    <span class="imports">
+      <a class="support" href="https://ko-fi.com/prinny5" target="_blank" rel="noopener" title="Support rainofchaos on Ko-fi"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 17.2 3.4 10.8A4 4 0 0 1 10 5.1a4 4 0 0 1 6.6 5.7Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>Support</a>
+      <button id="live-import" title="Watch the game and fill in each pair it shows">Import Market Ratios</button>
+    </span>
+  </header>
+  <main id="main"></main>
+  <!-- The home pages (#/home), one per game (/poe1, /poe2), shown by app.js: the guide for players. Common parts
+       are the same in both; keep them in step. -->
+  <template id="home-poe1">
+    <article class="guide">
+      <section>
+        <p>This site helps guide your <b>Currency Exchange</b> usage to make profits.</p>
+      </section>
+      <p class="disclaimer">
+        <svg class="info" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="6" r="1.2" fill="currentColor"/><rect x="9.1" y="8.6" width="1.8" height="6.2" rx="0.9" fill="currentColor"/></svg>
+        <span>This product isn't affiliated with or endorsed by Grinding Gear Games in any way.</span>
+      </p>
+      <section>
+        <h2>Your data</h2>
+        <p>Everything is saved in <b>this browser only</b>. There are no accounts.</p>
+      </section>
+      <section>
+        <h2>Get the prices: Import Market Ratios</h2>
+        <p>This site only uses prices it reads from your game. <a href="#" data-import>Import Market Ratios</a> copies them straight from the
+          Currency Exchange.</p>
+        <ol>
+          <li>Start <b>Path of Exile</b>.</li>
+          <li>On this site, click <a href="#" data-import><b>Import Market Ratios</b></a> at the top right, then the <b>record button</b> (the red
+            dot). Your browser asks which window to share: pick <b>Path of Exile</b>.</li>
+          <li>In the game, talk to Faustus and open the <b>Currency Exchange</b>. Choose one currency under <b>I Want</b> and one
+            under <b>I Have</b>.</li>
+          <li>Hover over <b>Market Ratio</b> and hold <b>Alt</b>.</li>
+          <li>When you hear a click, that pair is saved. Repeat steps 3 to 5 for each pair.</li>
+        </ol>
+        <p>Keep this webpage open while you play. Only your browser sees the game: nothing is uploaded. It needs
+          Firefox or Chrome on a computer.</p>
+      </section>
+      <section>
+        <h2>Find a trade</h2>
+        <ol>
+          <li>Pick your league at the top left.</li>
+          <li>Open <a href="#/trade-volumes"><b>Trade Volumes</b></a>. Currencies near the top trade the most.</li>
+          <li>Scan a few of them with <a href="#" data-import><b>Import Market Ratios</b></a>.</li>
+          <li>Open <a href="#/trade-recommendations"><b>Trade Recommendations</b></a>. Type how much Chaos you have next to <b>Starting Amount</b> (or click the
+            Divine icon to start with Divine).</li>
+          <li>Look at <b>Profitable</b> on the <b>Verified</b> tab and click one. Under the route you want, click
+            <b>Add to My Listings</b>.</li>
+          <li>Open <a href="#/my-listings"><b>My Listings</b></a>. Do the steps in order: place each order in the game, then click its <b>play
+            button</b>. Click its <b>check</b> once it's filled.</li>
+          <li>When every step is done, click <b>Mark As Completed</b>.</li>
+        </ol>
+      </section>
+      <section>
+        <h2>Support</h2>
+        <p>rainofchaos is free. If it's made you some Divines, you can support it on
+          <a href="https://ko-fi.com/prinny5" target="_blank" rel="noopener">Ko-fi</a>.</p>
+      </section>
+    </article>
+  </template>
+  <template id="home-poe2">
+    <article class="guide">
+      <section>
+        <p>This site helps guide your <b>Currency Exchange</b> usage to make profits.</p>
+      </section>
+      <p class="disclaimer">
+        <svg class="info" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="6" r="1.2" fill="currentColor"/><rect x="9.1" y="8.6" width="1.8" height="6.2" rx="0.9" fill="currentColor"/></svg>
+        <span>This product isn't affiliated with or endorsed by Grinding Gear Games in any way.</span>
+      </p>
+      <p class="disclaimer">
+        <svg class="info" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="6" r="1.2" fill="currentColor"/><rect x="9.1" y="8.6" width="1.8" height="6.2" rx="0.9" fill="currentColor"/></svg>
+        <span>Reading prices from Path of Exile 2 isn't fully tested yet.</span>
+      </p>
+      <section>
+        <h2>Your data</h2>
+        <p>Everything is saved in <b>this browser only</b>. There are no accounts.</p>
+      </section>
+      <section>
+        <h2>Get the prices: Import Market Ratios</h2>
+        <p>This site only uses prices it reads from your game. <a href="#" data-import>Import Market Ratios</a> copies them straight from the
+          Currency Exchange.</p>
+        <ol>
+          <li>Start <b>Path of Exile 2</b>.</li>
+          <li>On this site, click <a href="#" data-import><b>Import Market Ratios</b></a> at the top right, then the <b>record button</b> (the red
+            dot). Your browser asks which window to share: pick <b>Path of Exile 2</b>.</li>
+          <li>In the game, open the <b>Currency Exchange</b>. Choose one currency under <b>I Want</b> and one
+            under <b>I Have</b>.</li>
+          <li>Hover over <b>Market Ratio</b> and hold <b>Alt</b>.</li>
+          <li>When you hear a click, that pair is saved. Repeat steps 3 to 5 for each pair.</li>
+        </ol>
+        <p>Keep this webpage open while you play. Only your browser sees the game: nothing is uploaded. It needs
+          Firefox or Chrome on a computer.</p>
+      </section>
+      <section>
+        <h2>Find a trade</h2>
+        <ol>
+          <li>Pick your league at the top left.</li>
+          <li>Open <a href="#/trade-volumes"><b>Trade Volumes</b></a>. Currencies near the top trade the most.</li>
+          <li>Scan a few of them with <a href="#" data-import><b>Import Market Ratios</b></a>.</li>
+          <li>Open <a href="#/trade-recommendations"><b>Trade Recommendations</b></a>. Type how much Exalted you have next to <b>Starting Amount</b> (or click
+            the Divine icon to start with Divine).</li>
+          <li>Look at <b>Profitable</b> on the <b>Verified</b> tab and click one. Under the route you want, click
+            <b>Add to My Listings</b>.</li>
+          <li>Open <a href="#/my-listings"><b>My Listings</b></a>. Do the steps in order: place each order in the game, then click its <b>play
+            button</b>. Click its <b>check</b> once it's filled.</li>
+          <li>When every step is done, click <b>Mark As Completed</b>.</li>
+        </ol>
+      </section>
+      <section>
+        <h2>Support</h2>
+        <p>rainofchaos is free. If it's made you some Divines, you can support it on
+          <a href="https://ko-fi.com/prinny5" target="_blank" rel="noopener">Ko-fi</a>.</p>
+      </section>
+    </article>
+  </template>
+</body>
+</html>

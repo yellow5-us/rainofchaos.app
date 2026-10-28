@@ -1,0 +1,12 @@
+{
+  "firefox": {
+    "driver": "marionette",
+    "binary": "/Applications/Firefox.app/Contents/MacOS/firefox",
+    "args": ["--headless", "--width=1400", "--height=1100"]
+  },
+  "chrome": {
+    "driver": "cdp",
+    "binary": "~/.local/chrome-headless-shell/chrome-headless-shell",
+    "args": ["--window-size=1400,1100", "--no-first-run"]
+  }
+}

@@ -1,0 +1,7 @@
+__pycache__/
+.DS_Store
+rates.json
+state.json
+!tests/pages/rates.json
+!tests/pages/poe2/rates.json
+html/debug-algorithm/

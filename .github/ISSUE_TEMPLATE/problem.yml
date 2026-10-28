@@ -1,0 +1,46 @@
+name: Report a problem
+description: Something on rainofchaos.app doesn't work, or reads the wrong prices
+labels: [bug]
+body:
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      options:
+        - Path of Exile 1
+        - Path of Exile 2
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Firefox
+        - Chrome
+        - Other (say which below)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead. A screenshot helps.
+    validations:
+      required: true
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug files (for Import Market Ratios problems)
+      description: |
+        1. Open the site with `?debug` at the end of the address, e.g. `https://rainofchaos.app/poe1?debug`.
+        2. Use Import Market Ratios until the problem happens, then stop sharing.
+        3. Your browser downloads a log (`.txt`), a few game frames (`.png`) and your reads (`.json`). Drag them into this box.
+
+        The frames are pictures of your game window, so look at them first: they can show your stash, inventory or chat.
+        The `.json` file holds the prices you've read and your listings.
+  - type: input
+    id: version
+    attributes:
+      label: Site version
+      description: Optional. The first lines of the debug log name it.
