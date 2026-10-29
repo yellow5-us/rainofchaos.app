@@ -258,7 +258,7 @@ function docked(t) {
 
 // ---------- checks ----------
 
-const NAV = ["Home", "Trade Recommendations", "My Listings", "Imported Ratios", "Trade Volumes"];
+const NAV = ["Home", "Trade Recommendations", "My Listings", "Market Ratios", "Trade Volumes"];
 const navLabel = (a) => a.textContent.trim().replace(/ \(\d+\)$/, ""); // My Listings (N)
 const HOME_CARDS = ["Your data", "Get the prices: Import Market Ratios", "If importing doesn't work", "Find a trade", "Support"];
 
@@ -426,7 +426,7 @@ export const CHECKS = {
     t.eq([w.location.hash, activeMode()], ["#/trade-recommendations/estimated", "Estimated Trading"], "Estimated Trading");
     const estimated = Object.values(await openSections()).flat();
     t.eq(estimated.filter((k) => !k.startsWith("CurrencyRerollSocketLinks|")).sort(), [`after:${D}`, "direct", `before:${D}`].map((r) => `${CHROM}|${r}`).sort(),
-      "lists Chromatic's routes, and Jeweller's (never scanned)");
+      "lists Chromatic's routes, and Orb of Fusing's (never scanned)");
     const tag = $(".tag", tradeRow(CHROM, "direct").cells[COL.age]);
     t.eq([tag?.textContent, tag?.classList.contains("estimate"), tag?.title],
       ["estimate", true, "Some prices are the average of the last hour's trades, not a scan"], "tag: estimate");
@@ -456,7 +456,7 @@ export const CHECKS = {
     const sections = await openSections(), estimated = Object.values(sections).flat();
     t.eq(estimated.filter((k) => k.startsWith(`${CHROM}|`)).sort(), [`after:${C}`, `before:${C}`].map((r) => `${CHROM}|${r}`).sort(),
       "Estimated: Chromatic's routes through Chaos only");
-    t.ok(sections.untradeable?.includes("CurrencyRerollSocketLinks|direct"), "Jeweller's has no Divine market: Untradeable");
+    t.ok(sections.untradeable?.includes("CurrencyRerollSocketLinks|direct"), "Orb of Fusing has no Divine market: Untradeable");
     t.eq(text($(".tag", tradeRow("CurrencyRerollSocketLinks", "direct").cells[COL.profit])), "no estimate", "tagged no estimate");
     await go("#/trade-recommendations");
     const scanned = Object.values(await openSections()).flat();
@@ -803,6 +803,10 @@ export const CHECKS = {
     await go(`#/item/${CHROM}/estimated`);
     if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); }
     t.eq(text($("table.steps tbody tr", direct())), before, "Estimated Trading doesn't use it");
+    await go("#/market-ratios/manual");
+    t.eq([activeTab(), $$("tbody[data-row]").map((b) => b.dataset.row)], ["Manual (1)", [CHROM]], "Market Ratios' Manual tab lists it");
+    t.eq([$$("td.r-tags", $("tbody[data-row] tr:nth-child(2)"))[1].textContent.trim(), !!$("#main table.ratios .manual-edit, #main table.ratios [data-typed-reset]")],
+      ["manual", false], "tagged manual, not editable there");
     await go("#/my-listings");
     await click($("button.ratio-link[data-pair]", row()));
     await click($("[data-typed-reset]", dlg()));
@@ -1034,29 +1038,38 @@ export const CHECKS = {
     await volumesCheck(t, "poe2", [E, D]);
   } },
 
-  ratios: { game: "poe1", seed: "fresh", hash: "#/imported-ratios", async run(t, seed) {
+  ratios: { game: "poe1", seed: "fresh", hash: "#/market-ratios", async run(t, seed) {
     await ready();
-    t.eq([tabs(), $("#main .clear-all")], [[], null], "no tabs, no Clear All");
+    t.eq([tabs(), activeTab(), $("#main .clear-all")], [["Competitive (5)", "Instant (5)", "Estimated (1)", "Manual (0)"], "Competitive (5)", null],
+      "tabs: Competitive, the default, Instant, Estimated (Orb of Fusing, never scanned) and Manual; no Clear All");
     t.eq(text($("tbody[data-row] .group-head")), "Chaos ↔ Divine", "Chaos ↔ Divine first");
     t.eq($$("tbody[data-row] .group-head").length, 5, "every currency scanned");
     const times = new Set(Object.values(seed.leagues[seed.league].ratios).map((r) => r.verifiedAt));
     const tags = $$("#main .tag.verified");
-    t.eq(tags.length, 18, "a green tag per scanned price");
+    t.eq(tags.length, 9, "a green tag per scanned Competing price");
     t.eq(tags.filter((x) => !times.has(Number(x.dataset.scanAt)) || x.title !== `Scanned ${scanDate(Number(x.dataset.scanAt))}`)
       .map((x) => x.title), [], "tags' titles: Scanned <date>");
+    await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Estimated")));
+    t.eq(w.location.hash, "#/market-ratios/estimated", "Estimated's address");
+    t.eq($$("tbody[data-row]").map((b) => b.dataset.row), ["CurrencyRerollSocketLinks"], "Estimated: the currency with an estimate");
+    const est = $$("#main table.ratios tbody[data-row] tr:not(.group) td.r-tags").map((td) => td.textContent.trim());
+    t.eq(est.slice(0, 2), ["estimate", "estimate"], "its Chaos line at the estimate, both ways");
+    t.ok(!$("#main table.ratios .manual-edit, #main table.ratios input"), "nothing to edit");
+    await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Manual")));
+    t.eq(text($("#main > p.muted")), `No manual prices for ${LEAGUE.poe1}. Type them into a listing's prices on My Listings.`, "Manual: empty message");
   } },
 
   // Each price is six cells (icon, number, colon, number, icon, tags), so every row's parts line up: the colons in one
   // column, each number against its side of the colon and each icon against its number.
-  ratioCells: { game: "poe1", seed: "fresh", hash: "#/imported-ratios", async run(t) {
+  ratioCells: { game: "poe1", seed: "fresh", hash: "#/market-ratios", async run(t) {
     await ready();
     const rows = pageRows();
     t.eq(rows.map((tr) => [...tr.cells].map((td) => td.className.replace(/ ?muted/, "")).join(" ")).filter((x, i, all) => all.indexOf(x) === i),
-      [["r-icon r-end", "r-num r-end", "r-colon", "r-num", "r-icon", "r-tags"].join(" ").repeat(2).replace("r-tagsr-icon", "r-tags r-icon") + " num wait num spread vol"],
-      "every row: icon, number, colon, number, icon, tags, twice, then Wait, Spread and the volume");
+      [["r-icon r-end", "r-num r-end", "r-colon", "r-num", "r-icon", "r-tags", "num wait", "vol"].join(" ")],
+      "every row (Competitive): icon, number, colon, number, icon, tags, then Wait and the volume");
     const box = (el) => el.getBoundingClientRect();
     const ink = (td) => { const r = w.document.createRange(); r.selectNodeContents(td); return r.getBoundingClientRect(); };
-    for (const col of [0, 6]) {
+    for (const col of [0]) {
       const at = (i) => rows.map((tr) => tr.cells[col + i]);
       const same = (xs) => Math.max(...xs) - Math.min(...xs) <= 1;
       t.ok(same(at(2).map((td) => (box(td).left + box(td).right) / 2)), `column ${col / 6 + 1}: colons line up`);
@@ -1069,19 +1082,23 @@ export const CHECKS = {
     }
   } },
 
-  // Wait: the Competing queue's fill time at the pair's pace (only where its stock was read); Spread: how far apart the
-  // two prices are.
-  ratioStats: { game: "poe1", seed: "stocked", hash: "#/imported-ratios", async run(t) {
+  // Competitive: the Competing price and Wait, the Competing queue's fill time at the pair's pace (only where its stock was
+  // read); Instant: the Available price alone.
+  ratioStats: { game: "poe1", seed: "stocked", hash: "#/market-ratios", async run(t) {
     await ready();
-    t.eq($$("#main table.ratios thead th").filter((el) => !el.closest("#live-dialog")).map((th) => th.textContent), ["Available Trades", "Competing Trades", "Wait", "Spread", "Traded last hour"], "headers");
-    const line = (n) => { const tr = pageRows()[n]; return [tr.querySelector(".wait").textContent, tr.querySelector(".spread").textContent]; };
-    t.eq(line(0), ["~1.0 h", "2.7%"], "Chaos ↔ Divine: 250 div queued at 250 an hour (a quarter of the 1,000 traded); 370 against 380");
-    t.eq(line(1), ["", "8.5%"], "Chromatic vs Chaos: no stock read, no wait; 3.69 against 3.40");
+    const heads = () => $$("#main table.ratios thead th").filter((el) => !el.closest("#live-dialog")).map((th) => th.textContent);
+    t.eq(heads(), ["Competing Trades", "Wait", "Traded last hour"], "Competitive: headers");
+    const wait = (n) => pageRows()[n].querySelector(".wait").textContent;
+    t.eq(wait(0), "~1.0 h", "Chaos ↔ Divine: 250 div queued at 250 an hour (a quarter of the 1,000 traded)");
+    t.eq(wait(1), "", "Chromatic vs Chaos: no stock read, no wait");
+    await go("#/market-ratios/available");
+    t.eq([activeTab(), heads()], ["Instant (5)", ["Available Trades", "Traded last hour"]], "Instant: the Available price alone");
+    t.eq(text($$("td", pageRows()[0]).find((td) => td.classList.contains("r-num"))), "370", "Chaos ↔ Divine: 370 : 1");
   } },
 
   // Undercutting (SPEC.md §3.6): 250 div an hour posted ahead of Chaos:Divine's best price, read from its lists, drains its
   // queue at the floor, half the pace.
-  undercut: { game: "poe1", seed: "undercut", hash: "#/imported-ratios", async run(t) {
+  undercut: { game: "poe1", seed: "undercut", hash: "#/market-ratios", async run(t) {
     await ready();
     t.eq(pageRows()[0].querySelector(".wait").textContent, "~2.0 h", "Wait: 250 div queued at 250 an hour less 250 undercutting, no less than 125");
     await go(`#/item/${CHROM}/competitive`);
@@ -1092,7 +1109,7 @@ export const CHECKS = {
 
   // Measured buying (SPEC.md §3.6): 150 div an hour of Chaos:Divine's orders bought, read from its lists, paces its queue in
   // place of the pair's 250.
-  bought: { game: "poe1", seed: "bought", hash: "#/imported-ratios", async run(t) {
+  bought: { game: "poe1", seed: "bought", hash: "#/market-ratios", async run(t) {
     await ready();
     t.eq(pageRows()[0].querySelector(".wait").textContent, "~1.7 h", "Wait: 250 div queued at 150 an hour");
     await go(`#/item/${CHROM}/competitive`);
@@ -1101,13 +1118,13 @@ export const CHECKS = {
     t.eq([...new Set(titled)], ["Paced by your scans: about 150 Divine Orb bought an hour"], "its hover");
   } },
 
-  ratiosEmpty: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  ratiosEmpty: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
-    t.eq(tabs(), [], "no tabs");
-    t.eq(text($("#main > p.muted")), `No rates have been scanned for ${LEAGUE.poe1} in the last 4 hours. Use Import Market Ratios at the top right to read them from the game.`, "empty message");
+    t.eq(tabs(), ["Competitive (0)", "Instant (0)", "Estimated (5)", "Manual (0)"], "tabs");
+    t.eq(text($("#main > p.muted")), `No Competing Trades have been scanned for ${LEAGUE.poe1} in the last 4 hours. Use Import Market Ratios at the top right to read them from the game.`, "empty message");
   } },
 
-  importWindow: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importWindow: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     t.ok($("#live-dialog[open].collapsed") && !liveDialog(), "on load, the import window is on the page, hidden to its strip");
     await click($("#live-import"));
@@ -1143,7 +1160,7 @@ export const CHECKS = {
 
   // Frames are read in a worker (js/reader.js): a read of the largest test frame (about 0.4 s) doesn't hold up the page.
   // Left out on CI (.github/workflows/tests.yml), where the runners' pauses don't come from the page.
-  importOffPage: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importOffPage: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     let last = performance.now(), longest = 0;
     const tick = w.setInterval(() => { const now = performance.now(); longest = Math.max(longest, now - last); last = now; }, 10);
@@ -1156,7 +1173,7 @@ export const CHECKS = {
   // The reader and its helper (js/reader.js) split a frame between them: the lists and names as one read gives them, the
   // `?debug` nearest names for both boxes, and a second read of the same frame confirmed from its crops. Name boxes
   // read before read as they did, and other names in them as themselves.
-  readerHelper: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  readerHelper: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     const catalog = await (await fetch("/data/catalog.json")).json();
     const worker = new Worker(new URL("../../html/js/reader.js", import.meta.url), { type: "module" });
     const answer = () => new Promise((done) => { worker.onmessage = ({ data }) => done(data); });
@@ -1187,7 +1204,7 @@ export const CHECKS = {
 
   // Each list read is saved as its row's orders, with the price it gives: the row's stock and its list's first stock
   // are one reading, whichever list (a pair's Available, or the reverse pair's Competing) read the row last.
-  importLists: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importLists: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-full.png", /Imported prices/);
     t.ok(/Imported prices/.test(r.status), "the frame imports", r.status);
@@ -1199,7 +1216,7 @@ export const CHECKS = {
     }
   } },
 
-  importCancel: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importCancel: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(null, /Sharing was cancelled/);
     t.eq(r.status, "Sharing was cancelled.", "refused share: status");
@@ -1221,7 +1238,7 @@ export const CHECKS = {
     t.ok(!liveDialog(), "sharing hides it to its strip");
     await click($("#live-import"));
     t.eq([!!liveDialog(), $$("#live-dialog").length, text($(".live-status"))], [true, 1, "Imported prices for Chaos Orb and Divine Orb."], "Import Market Ratios shows it, as it was");
-    for (const label of ["Trade Volumes", "Imported Ratios"]) {
+    for (const label of ["Trade Volumes", "Market Ratios"]) {
       await click($$("nav a").find((a) => a.textContent === label));
       await sleep(300);
       t.ok(liveDialog() && sharing(), `${label}: still shown and sharing`);
@@ -1265,7 +1282,7 @@ export const CHECKS = {
     $("#live-stop").click();
     await waitFor(() => !liveDialog());
   } },
-  importPoe1: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importPoe1: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb.", "reads the shared window");
@@ -1306,7 +1323,7 @@ export const CHECKS = {
     t.ok(!$("#live-stop") && $("[data-live-watch]", win()), "no stop button now, the record button back");
   } },
 
-  importPoe2: { game: "poe2", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importPoe2: { game: "poe2", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/poe2-exalted-2152x1243.png", /Imported prices/);
     t.eq(r.share, "Share Path of Exile 2 Screen", "PoE2's share button");
@@ -1329,24 +1346,24 @@ export const CHECKS = {
     t.ok(sell && !$(".tag.warn", sell), "selling it posts the only order, at the pair's usual price (0.12 Chaos a Vivid), with nothing wrong",
       text($("table.steps", direct)));
     t.ok(!/no competing trades/.test(text(direct)), "and no tag saying nobody else is posting");
-    await go("#/imported-ratios");
-    t.eq($$("#main td.r-none").map(text), ["no trades"], "Imported Ratios shows the box as no trades");
+    await go("#/market-ratios");
+    t.eq($$("#main td.r-none").map(text), ["no trades"], "Market Ratios shows the box as no trades");
   } },
 
   // One list read: Available alone with no banners (no Competing trades), or Competing moved up under the game's "no
   // available trades" message. Seen from Alchemy Shard ↔ Chaos, both leave Competing Trades unread.
-  importNoCompeting: { game: "poe1", seed: "shard", hash: "#/imported-ratios", async run(t, seed) {
+  importNoCompeting: { game: "poe1", seed: "shard", hash: "#/market-ratios", async run(t, seed) {
     await oneList(t, seed, "/tests/snips/size-small-no-competing.png", "Alchemy Shard and Chaos Orb");
     t.ok(saved(STORAGE.poe1).leagues[LEAGUE.poe1].lists?.[`${C}>${SHARD}`], "Available's list saved");
   } },
 
-  importNoAvailable: { game: "poe1", seed: "shard", hash: "#/imported-ratios", async run(t, seed) {
+  importNoAvailable: { game: "poe1", seed: "shard", hash: "#/market-ratios", async run(t, seed) {
     await oneList(t, seed, "/tests/snips/size-small-no-available.png", "Chaos Orb and Alchemy Shard");
   } },
 
   // Available alone with no banners is also a hover without Alt: it isn't imported until it has shown for 3 seconds, so
   // holding Alt in that time imports both lists at once.
-  importOneListWaits: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importOneListWaits: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Waiting for price info/);
     await sleep(1500);
@@ -1359,7 +1376,7 @@ export const CHECKS = {
 
   // Alt held with the cursor over Competing, then moved off it: the window looks the same but for the cursor, and it's
   // read again and imported.
-  importCursorMoves: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importCursorMoves: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(await cursorOver("/tests/snips/size-5.png"), /Waiting for price info/);
     await sleep(1500);
@@ -1371,7 +1388,7 @@ export const CHECKS = {
 
   // Both prices scanned (still in use), then the pair left showing without Alt (Alt let go): Available is read again,
   // and Competing's price stays.
-  importAltLetGo: { game: "poe1", seed: "gap", hash: "#/imported-ratios", async run(t, seed) {
+  importAltLetGo: { game: "poe1", seed: "gap", hash: "#/market-ratios", async run(t, seed) {
     await ready();
     const r = await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb (no competing trades).", "Available alone, left showing: imported");
@@ -1380,7 +1397,7 @@ export const CHECKS = {
     t.ok(ratios[`${D}>${C}`].verifiedAt > was[`${D}>${C}`].verifiedAt, "Available's read again");
   } },
   // The same with both read over 4 hours ago (no longer used): the Competing price is saved as none.
-  importAltOld: { game: "poe1", seed: "gapOld", hash: "#/imported-ratios", async run(t) {
+  importAltOld: { game: "poe1", seed: "gapOld", hash: "#/market-ratios", async run(t) {
     await ready();
     await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Imported prices/);
     const none = saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios[`${C}>${D}`];
@@ -1388,7 +1405,7 @@ export const CHECKS = {
   } },
 
   // Left showing, Available alone is imported; Alt held then imports both lists at once, not 10 seconds later.
-  importOneListThenAlt: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importOneListThenAlt: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb (no competing trades).", "Available alone, left showing: imported");
@@ -1402,7 +1419,7 @@ export const CHECKS = {
   } },
 
   // The same prices left showing aren't imported again; shown again after the box has gone (another hover), they are.
-  importShownAgain: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importShownAgain: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
     const at = () => saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios[`${D}>${C}`].verifiedAt, first = at();
@@ -1416,7 +1433,7 @@ export const CHECKS = {
 
   // Lists without the game's window (no title-bar buttons in sight) aren't read: the status says it can't see the window,
   // and nothing's imported until it shows.
-  importNoWindow: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importNoWindow: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/moved-window.png", /Can't see/);
     t.eq(r.status, "Can't see the Currency Exchange window.", "status");
@@ -1430,14 +1447,14 @@ export const CHECKS = {
 
   // Chaos ↔ Divine's latest hour thin and far off (1,600 chaos a div, against the capture's 368 and the recent hours' and
   // days' 375): the reading is within 3x of those, so it's imported.
-  importThinHour: { game: "poe1", seed: "empty", hash: "#/imported-ratios",
+  importThinHour: { game: "poe1", seed: "empty", hash: "#/market-ratios",
     rates: (json) => pairWith(json, { volA: 1600000, volB: 1000 }), async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb.", "imported");
   } },
   // Every window far off (1,600 chaos a div in the latest hour, the recent hours and the days): not imported.
-  importAllFar: { game: "poe1", seed: "empty", hash: "#/imported-ratios",
+  importAllFar: { game: "poe1", seed: "empty", hash: "#/market-ratios",
     rates: (json) => pairWith(json, { volA: 1600000, volB: 1000, recentA: 6400000, recentB: 4000, dayA: 38400000, dayB: 24000 }), async run(t) {
     await ready();
     await importFrom("/tests/snips/size-5.png", /Waiting for price info/);
@@ -1446,7 +1463,7 @@ export const CHECKS = {
   } },
 
   // One list's price over 3x off the pair's last price (no hourly average here): not imported.
-  importOneListFar: { game: "poe1", seed: "shardFar", hash: "#/imported-ratios", async run(t, seed) {
+  importOneListFar: { game: "poe1", seed: "shardFar", hash: "#/market-ratios", async run(t, seed) {
     await ready();
     await importFrom("/tests/snips/size-small-no-available.png", /Waiting for price info/);
     await sleep(4000);
@@ -1495,7 +1512,7 @@ export const CHECKS = {
     t.ok(await waitFor(() => !amount.classList.contains("copied"), 2000), "the highlight goes again");
   } },
 
-  scanSound: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  scanSound: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const starts = recordSound();
     const r = await importFrom("/tests/snips/size-3.png", /Imported prices/);
@@ -1533,8 +1550,8 @@ export const CHECKS = {
   } },
 
   // ?debug: nothing on screen; the log downloads when watching stops.
-  importDebug: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t, seed, page) {
-    await page.open("/poe1?debug#/imported-ratios", "/poe1");
+  importDebug: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t, seed, page) {
+    await page.open("/poe1?debug#/market-ratios", "/poe1");
     await ready();
     const files = catchDownloads();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
@@ -1568,9 +1585,9 @@ export const CHECKS = {
 
   // The read history (SPEC.md §7): each list read is added to it, and ?debug saves it as JSON when watching ends, with the
   // site's version, how long it's kept and the undercutting's constants.
-  readHistory: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t, seed, page) {
+  readHistory: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t, seed, page) {
     await clearReads(LEAGUE.poe1);
-    await page.open("/poe1?debug#/imported-ratios", "/poe1");
+    await page.open("/poe1?debug#/market-ratios", "/poe1");
     await ready();
     const files = catchDownloads();
     await importFrom("/tests/snips/size-5.png", /Imported prices/);
@@ -1614,15 +1631,15 @@ export const CHECKS = {
     await ready();
     await clearReads(LEAGUE.poe1);
     await addRead(LEAGUE.poe1, STALE_KEY, [{ ratio: [1, 3.4], stock: 5 }], null, Date.now() - 5 * 3600000);
-    await go("#/imported-ratios");
+    await go("#/market-ratios");
     const left = Object.keys(saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios);
     t.eq([left.includes(STALE_KEY), left.length], [false, Object.keys(seed.leagues[LEAGUE.poe1].ratios).length - 1], "only the old price is gone");
     t.eq((await historyOf(LEAGUE.poe1)).length, 1, "and the read history is kept");
     await clearReads(LEAGUE.poe1);
   } },
 
-  dockedTopLevel: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t, seed, page) {
-    await page.popup("/poe1#/imported-ratios", "/poe1");
+  dockedTopLevel: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t, seed, page) {
+    await page.popup("/poe1#/market-ratios", "/poe1");
     await ready();
     t.ok(w.top === w, "app in a top-level window");
     await click($("#live-import"));

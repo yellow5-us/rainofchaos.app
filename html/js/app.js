@@ -1,6 +1,6 @@
 // Pages and wiring (SPEC.md §4). Hash routes: #/home (the guide; #/ and no hash go there),
 // #/trade-recommendations (Competitive Trading), with /available for Instant Trading and /estimated for Estimated Trading,
-// #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/imported-ratios.
+// #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/market-ratios.
 import {
   allResults, drain, ESTIMATE, estimateRatio, FAST, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
   rowOf, setBought, setEstimate, setNoOrders, setTyped, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
@@ -33,7 +33,7 @@ $("#game").addEventListener("change", (e) => {
 const main = $("#main");
 let rates = null;
 let pendingRemoveCompleted = false;
-let query = ""; // search box on the Imported Ratios page
+let query = ""; // search box on the Market Ratios page
 const PAGE_SIZE = 40; // long lists show this many matches at a time
 
 // The game's two views of a pair. Available Trades (default view) = fill orders already on the market;
@@ -372,25 +372,25 @@ function stepsHtml(r, cells = {}) {
 
 // A ratio as read from the game, with the decimals it showed (8.30 stays 8.30), in six cells so every row's parts line
 // up: icon, number, colon, number, icon (the numbers hugging the colon, the icons their numbers), then `tags`. A price
-// not read shows `empty` across the middle three.
+// not read shows "no trades" (read empty) or `none` across the middle three.
 const decimalsOf = (v) => (String(v).split(".")[1] ?? "").length;
 const fixed = (v, d) => (v === "" || v == null ? "" : Number(v).toFixed(d));
-function ratioCells(a, b, key, flip, tags = "") {
-  const r = ratioOf(key), v = r?.value, empty = r?.empty ? "no trades" : "not scanned";
+function ratioCells(a, b, key, flip, tags = "", none = "not scanned") {
+  const r = ratioOf(key), v = r?.value, empty = r?.empty ? "no trades" : none;
   const side = (i) => fixed(v[i], r.digits?.[i] ?? decimalsOf(v[i]));
   const middle = v ? `<td class="r-num r-end">${side(flip ? 1 : 0)}</td><td class="r-colon">:</td><td class="r-num">${side(flip ? 0 : 1)}</td>`
     : `<td class="r-none muted" colspan="3">${empty}</td>`;
   return `<td class="r-icon r-end">${iconOnly(a)}</td>${middle}<td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tags}</td>`;
 }
 // The Available column (flip) reads row B:A, the Competing one row A:B; either may have no orders. Only the dialog says
-// so (it's opened from the trade pages); Imported Ratios doesn't need it.
+// so (it's opened from the trade pages); Market Ratios doesn't need it.
 const ratioCell = (a, b, key, flip, withNoOrders) =>
-  ratioCells(a, b, key, flip, `${scanTag(key, "#/imported-ratios")}${withNoOrders && noOrderRows().has(key) ? below(noOrdersTag(flip)) : ""}`);
+  ratioCells(a, b, key, flip, `${scanTag(key, "#/market-ratios")}${withNoOrders && noOrderRows().has(key) ? below(noOrdersTag(flip)) : ""}`);
 
 // The game shows a pair as "A : B" both ways. By default it's "Available Trades", the orders already on
 // the other side: internal row B:A, so it's drawn flipped. Holding Alt shows "Competing Trades", the
 // price you'd post at: internal row A:B. Example: Chaos 371 : 1 Divine available, 380 : 1 competing.
-// Imported Ratios' columns after the prices: Wait, how long the orders already at the Competing price take to fill at the
+// Market Ratios' columns after the prices: Wait, how long the orders already at the Competing price take to fill at the
 // pair's recent pace less its undercutting (the queue a new order joins, SPEC.md §3.6; blank without its stock); Spread,
 // how far apart the Available and Competing prices are; and how much traded last hour.
 function waitCell(a, b) {
@@ -403,41 +403,56 @@ function spreadCell(a, b) {
   const spread = av && co ? Math.abs((co[0] / co[1]) / (av[1] / av[0]) - 1) * 100 : null;
   return `<td class="num spread">${spread == null ? "" : `${spread.toFixed(1)}%`}</td>`;
 }
-// The price window on My Listings (`typing`) can have its prices typed over (SPEC.md §4.6): each is the price My Listings
-// uses (one typed in, the scan, else the estimate), its two numbers shaded, each a box once clicked, with its tag; one typed
-// in has a reset that removes it. None of them: as anywhere else.
-function typedCells(a, b, key, flip) {
-  const [x, y] = key.split(">"), typed = typedFor(key), scan = ratioOf(key)?.value ? ratioOf(key) : null;
+// A price as Estimated Trading uses it (`kind` "estimated": the scan, else the estimate) or My Listings ("manual": a price
+// typed in there, then the same), with its tag (SPEC.md §4.3). `edit` (the price window on My Listings, §4.6) shades its
+// two numbers, each a box once clicked, and a typed one has a reset that removes it. With none of them, as anywhere else.
+function shownCells(a, b, key, flip, kind, edit = false) {
+  const [x, y] = key.split(">"), typed = kind === "manual" ? typedFor(key) : null, scan = ratioOf(key)?.value ? ratioOf(key) : null;
   const v = typed ?? scan?.value ?? estimateRatio(x, y);
-  if (!v) return ratioCells(a, b, key, flip);
+  if (!v) return ratioCells(a, b, key, flip, "", "no estimate");
   const digits = !typed && scan ? scan.digits : null;
-  const part = (i) => (editingTyped === `${key}|${i}`
+  const shown = (i) => fixed(v[i], digits?.[i] ?? decimalsOf(v[i]));
+  const part = (i) => (!edit ? shown(i) : editingTyped === `${key}|${i}`
     ? `<input type="number" min="0" step="any" id="typed-ratio" value="${v[i]}" aria-label="${esc(nameOf(i ? y : x))}">`
-    : `<button type="button" class="manual-edit" data-typed-edit="${key}|${i}" title="Change">${fixed(v[i], digits?.[i] ?? decimalsOf(v[i]))}</button>`);
-  const tag = typed ? `${manualTag()} <button type="button" class="reset" data-typed-reset="${key}"
-    title="Back to the ${scan ? "scanned price" : "estimate"}">reset</button>` : scan ? scanTag(key) : estimateTag();
+    : `<button type="button" class="manual-edit" data-typed-edit="${key}|${i}" title="Change">${shown(i)}</button>`);
+  const reset = typed && edit ? ` <button type="button" class="reset" data-typed-reset="${key}"
+    title="Back to the ${scan ? "scanned price" : "estimate"}">reset</button>` : "";
+  const tag = typed ? manualTag() + reset : scan ? scanTag(key) : estimateTag();
   const [l, r] = flip ? [1, 0] : [0, 1];
   return `<td class="r-icon r-end">${iconOnly(a)}</td><td class="r-num r-end">${part(l)}</td><td class="r-colon">:</td><td class="r-num">${
     part(r)}</td><td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tag}</td>`;
 }
-const ratioLine = ([a, b], withStats, withNoOrders = false, typing = false) => {
+// One line of a pair's prices: as scanned, or as `kind` shows them (shownCells: "estimated", "manual"). Market Ratios'
+// Competitive and Instant tabs (`kind` "competitive", "available") show only that column, scanned.
+const ratioLine = ([a, b], withStats, withNoOrders = false, kind = null, edit = false) => {
   const v = withStats && pairVolume(rates.leagues[league()], a, b);
-  const stats = withStats ? `${waitCell(a, b)}${spreadCell(a, b)}<td class="vol muted">${qty(v?.[0] ?? 0, a)} ⇄ ${qty(v?.[1] ?? 0, b)}</td>` : "";
-  const cell = (key, flip) => (typing ? typedCells(a, b, key, flip) : ratioCell(a, b, key, flip, withNoOrders));
+  const vol = `<td class="vol muted">${qty(v?.[0] ?? 0, a)} ⇄ ${qty(v?.[1] ?? 0, b)}</td>`;
+  if (kind === "competitive") return `<tr>${ratioCell(a, b, rowKey(a, b), false, withNoOrders)}${waitCell(a, b)}${vol}</tr>`;
+  if (kind === "available") return `<tr>${ratioCell(a, b, rowKey(b, a), true, withNoOrders)}${vol}</tr>`;
+  const stats = withStats ? `${waitCell(a, b)}${spreadCell(a, b)}${vol}` : "";
+  const cell = (key, flip) => (kind ? shownCells(a, b, key, flip, kind, edit) : ratioCell(a, b, key, flip, withNoOrders));
   return `<tr>${cell(rowKey(b, a), true)}${cell(rowKey(a, b), false)}${stats}</tr>`;
 };
 
 // Groups of lines, each under its own heading, e.g. one group per item (vs Chaos, vs Divine).
-const ratioTable = (groups) => `<div class="scroll"><table class="ratios">
-  <thead><tr><th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th>
-    <th class="num" title="How long the Competing orders already at that price take to fill">Wait</th>
-    <th class="num" title="How far apart the Available and Competing prices are">Spread</th><th class="vol">Traded last hour</th></tr></thead>
-  ${groups.map((g) => `<tbody data-row="${g.id ?? "hubs"}"><tr class="group"><th colspan="15"><div class="group-head">
+const WAIT_TH = `<th class="num" title="How long the Competing orders already at that price take to fill">Wait</th>`;
+const RATIO_HEADS = {
+  competitive: [`<th colspan="6">Competing Trades</th>${WAIT_TH}`, 8],
+  available: [`<th colspan="6">Available Trades</th>`, 7],
+  both: [`<th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th>${WAIT_TH}
+    <th class="num" title="How far apart the Available and Competing prices are">Spread</th>`, 15],
+};
+const ratioTable = (groups, kind = "both") => {
+  const [heads, cols] = RATIO_HEADS[kind] ?? RATIO_HEADS.both;
+  return `<div class="scroll"><table class="ratios">
+  <thead><tr>${heads}<th class="vol">Traded last hour</th></tr></thead>
+  ${groups.map((g) => `<tbody data-row="${g.id ?? "hubs"}"><tr class="group"><th colspan="${cols}"><div class="group-head">
     <span>${g.id // a currency's name opens its page in Available Trades; the hubs' block has none
       ? `<a href="#/item/${g.id}/available" title="Open in Available Trades">${icon(g.id)}${esc(g.title)}</a>`
       : esc(g.title)}</span>
-  </div></th></tr>${g.lines.map((line) => ratioLine(line, true)).join("")}</tbody>`).join("")}
+  </div></th></tr>${g.lines.map((line) => ratioLine(line, true, false, kind === "both" ? null : kind)).join("")}</tbody>`).join("")}
 </table></div>`;
+};
 
 // The hubs against each other (PoE1: Chaos ↔ Divine), then one block per item with a line per hub.
 const hubGroup = () => ({
@@ -450,7 +465,7 @@ const itemGroup = (item) => ({ id: item.id, title: item.name, lines: currencies.
 const searchBox = (placeholder) =>
   `<p><input type="search" id="search" placeholder="${placeholder}" value="${esc(query)}" autocomplete="off"></p>`;
 
-// Pagination for the Imported Ratios list: PAGE_SIZE rows per page. The page resets when the
+// Pagination for the Market Ratios list: PAGE_SIZE rows per page. The page resets when the
 // search changes or you navigate away.
 let pageNo = 1;
 // Trade Recommendations' tables opened or closed by hand, by key; kept while on that page. Only Profitable starts open.
@@ -522,7 +537,7 @@ function startControls() {
     <span class="base-toggle" role="group" aria-label="Currency to start with">${buttons}</span></span></div>`;
 }
 
-// Competitive / Instant tabs, styled like Imported Ratios'. `href(mode)` is each tab's address.
+// Competitive / Instant tabs, styled like Market Ratios'. `href(mode)` is each tab's address.
 const modeTabs = (mode, href, itemId) => `<div class="tabs">${Object.entries(MODES)
   .map(([m, md]) => `<a href="${href(m)}" class="${m === mode ? "active" : ""}" data-reset-steps="${itemId}">${md.tab}</a>`).join("")}</div>`;
 // Competitive / Instant / Estimated Trading as a selector (links), like the starting currency's. Competitive and Instant list
@@ -531,7 +546,7 @@ const exchangeHref = (m) => `#/trade-recommendations${m === DEFAULT_MODE ? "" : 
 const modeToggle = (mode) => `<p class="mode-pick"><span class="mode-toggle" role="group" aria-label="Trading">${Object.entries(MODES)
   .map(([m, md]) => `<a href="${exchangeHref(m)}" class="${m === mode ? "active" : ""}"${m === mode ? ' aria-current="page"' : ""}>${md.tab}</a>`).join("")}</span></p>`;
 
-// After "nothing scanned" (Trade Recommendations, Imported Ratios): a link that opens the header's import window.
+// After "nothing scanned" (Trade Recommendations, Market Ratios): a link that opens the header's import window.
 const importHint = () => `Use <a href="#" data-import>Import Market Ratios</a> at the top right to read them from the game.`;
 
 // Trade Recommendations: the starting amount, the Competitive / Instant / Estimated selector, then the tables.
@@ -1057,21 +1072,40 @@ const tabs = (page, modified, onlyModified) => {
   return `<div class="tabs">${tab(`#/${page}`, `Modified (${modified})`, onlyModified)}${tab(`#/${page}/all`, "All", !onlyModified)}</div>`;
 };
 
-// Imported Ratios (#/imported-ratios): the currencies with a ratio scanned in the last 4 hours, with search and paging, each
-// showing every line of a currency (vs Chaos and vs Divine) even if only one is scanned.
-function ratesPage() {
-  const has = (g) => g.lines.some(lineScanned);
-  if (!has(hubGroup()) && !items().map(itemGroup).some(has)) {
-    return `<p class="muted">No rates have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}</p>`;
+// Market Ratios (SPEC.md §4.3): four tabs, each the currencies with a price of its kind, with search and paging, each
+// showing every line of a currency (vs Chaos and vs Divine) even if only one is of that kind: Competitive (#/market-ratios:
+// Competing Trades scanned in the last 4 hours) and Instant (/available: Available Trades), one column each; Estimated
+// (/estimated: a price with no scan, at its estimate, shown as Estimated Trading uses them) and Manual (/manual: typed in
+// on My Listings, shown as My Listings uses them).
+const RATIO_TABS = { competitive: "Competitive", available: "Instant", estimated: "Estimated", manual: "Manual" };
+const ratioTab = (arg) => (arg in RATIO_TABS ? arg : "competitive");
+const rowsOfLine = ([a, b]) => [rowKey(a, b), rowKey(b, a)];
+const LINE_HAS = {
+  competitive: ([a, b]) => isScanned(rowKey(a, b)),
+  available: ([a, b]) => isScanned(rowKey(b, a)),
+  estimated: (line) => rowsOfLine(line).some((key) => !isScanned(key) && estimateRatio(...key.split(">"))),
+  manual: (line) => rowsOfLine(line).some((key) => typedFor(key)),
+};
+function ratesPage(tab) {
+  const has = (t) => (g) => g.lines.some(LINE_HAS[t]);
+  // Each tab counts currencies (Chaos ↔ Divine as one), as its list and paging do.
+  const count = (t) => items().map(itemGroup).filter(has(t)).length + (has(t)(hubGroup()) ? 1 : 0);
+  const tabRow = `<div class="tabs">${Object.entries(RATIO_TABS).map(([t, label]) => `<a href="#/market-ratios${t === "competitive" ? "" : `/${t}`}"
+    class="${t === tab ? "active" : ""}">${label} (${num(count(t))})</a>`).join("")}</div>`;
+  if (!count(tab)) {
+    return `${tabRow}<p class="muted">${tab === "competitive" || tab === "available" ? `No ${tab === "competitive" ? "Competing" : "Available"} Trades have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`
+      : tab === "estimated" ? `No estimates for ${esc(league())}: every pair traded lately is scanned.`
+      : `No manual prices for ${esc(league())}. Type them into a listing's prices on My Listings.`}</p>`;
   }
-  const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has);
-  // The latest read first (after Chaos ↔ Divine, which always leads when it's in the list).
-  const readAt = (g) => Math.max(...g.lines.flatMap(([a, b]) => [rowKey(a, b), rowKey(b, a)]).map((k) => ratioOf(k)?.verifiedAt ?? 0));
-  found.sort((x, y) => readAt(y) - readAt(x));
-  const lead = [hubGroup()].filter(has);
-  return `${searchBox("Search currencies")}
+  const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(tab));
+  // The latest read first (after Chaos ↔ Divine, which always leads when it's in the list); estimates by name.
+  const readAt = (g) => Math.max(...g.lines.flatMap(rowsOfLine).map((k) => (tab === "manual" ? store.typedOf(league(), k)?.at : ratioOf(k)?.verifiedAt) ?? 0));
+  if (tab !== "estimated") found.sort((x, y) => readAt(y) - readAt(x));
+  const lead = [hubGroup()].filter(has(tab));
+  return `${tabRow}
+    ${searchBox("Search currencies")}
     ${pager(found.length)}
-    ${lead.length || found.length ? ratioTable([...lead, ...paged(found)]) : `<p class="muted">No matches.</p>`}
+    ${lead.length || found.length ? ratioTable([...lead, ...paged(found)], tab) : `<p class="muted">No matches.</p>`}
     ${pager(found.length)}`;
 }
 
@@ -1130,7 +1164,7 @@ function render() {
   const home = page === "home";
   // Trade Recommendations: #/trade-recommendations[/<mode>]; item pages: #/item/<id>/<mode>.
   const mode = (page === "trade-recommendations" ? arg : modeArg) ?? DEFAULT_MODE; // a mode not in MODES fails to draw
-  const navTarget = home || ["my-listings", "trade-volumes", "imported-ratios"].includes(page) ? page : "trade-recommendations"; // item pages are under Trade Recommendations
+  const navTarget = home || ["my-listings", "trade-volumes", "market-ratios"].includes(page) ? page : "trade-recommendations"; // item pages are under Trade Recommendations
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === `#/${navTarget}`));
   // The League dropdown is filled from the rates, so it shows once they've loaded.
   $(".league").hidden = !rates;
@@ -1148,7 +1182,7 @@ function render() {
   const content = home ? $(`#home-${game.id}`).innerHTML
     : page === "item" ? itemPage(decodeURIComponent(arg ?? ""), mode)
     : page === "my-listings" ? listingsPage(arg === "completed")
-    : page === "imported-ratios" ? ratesPage()
+    : page === "market-ratios" ? ratesPage(ratioTab(arg))
     : page === "trade-volumes" ? volumesPage()
     : summaryPage(mode);
   const before = markNext ? rowTexts() : null;
@@ -1189,7 +1223,7 @@ function render() {
 }
 
 // After a scan, whatever it changed on the page behind the dialog lights up and fades (SPEC.md §4.7): a Trade
-// Recommendations row, an item page's route, a Imported Ratios block (each marked data-row). It's kept across the redraws while
+// Recommendations row, an item page's route, a Market Ratios block (each marked data-row). It's kept across the redraws while
 // it fades, picking up where it was.
 const CHANGED_FOR = 4000;
 let markNext = false;
@@ -1240,7 +1274,7 @@ function ratioDialog() {
   const block = ([a, b]) => `<tbody class="dialog-pair">
     <tr class="group"><th colspan="12"><div class="dialog-title"><span>${full(a)} ↔ ${full(b)}</span></div></th></tr>
     <tr class="cols"><th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th></tr>
-    ${ratioLine([a, b], false, true, typing)}
+    ${ratioLine([a, b], false, true, typing ? "manual" : null, typing)}
   </tbody>`;
   return `<dialog id="ratio-dialog">
     <button id="dialog-close" class="close" aria-label="Close" title="Close">×</button>
@@ -2142,7 +2176,7 @@ window.addEventListener("hashchange", (e) => {
   if (page !== "item" || itemOf(decodeURIComponent(slug ?? ""))?.id !== pickedRoute.item) pickedRoute = {};
   // The search box survives switching tabs on the same page (Trade Recommendations: the trading modes); any other move clears it. The list changes either way, so it's back to page 1.
   const pageOf = (url) => new URL(url).hash.split("/")[1];
-  if (!["trade-recommendations", "trade-volumes", "imported-ratios"].includes(pageOf(e.newURL)) || pageOf(e.oldURL) !== pageOf(e.newURL)) query = "";
+  if (!["trade-recommendations", "trade-volumes", "market-ratios"].includes(pageOf(e.newURL)) || pageOf(e.oldURL) !== pageOf(e.newURL)) query = "";
   if (pageOf(e.newURL) !== "trade-recommendations") sectionState.clear();
   pageNo = 1;
   lit.clear();
