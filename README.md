@@ -13,15 +13,15 @@ This product isn't affiliated with or endorsed by Grinding Gear Games in any way
 
 ## What it does
 
-- **Trade Recommendations:** every route of every tradable currency, sorted into Profitable, Unprofitable and
+- **Recommendations:** every route of every tradable currency, sorted into Profitable, Unprofitable and
   Untradeable, for Competitive Trading (posting your own orders and waiting), Instant Trading (filling existing
   orders) or Estimated Trading (the trades not scanned, priced from the last hour's trades). Each currency's page shows its routes step by step, with gold fees and how long they should take to fill.
-- **My Listings:** the trades you've added with Add to My Listings, followed step by step as you post and fill them,
+- **Listings:** the trades you've added with Add to Listings, followed step by step as you post and fill them,
   each step's price kept from the scans or typed in (Manual), with the profit projected and, once completed, made.
 - **Getting prices:** prices come from the game. **Import Market Ratios** (top right) shares the game's window
   and fills in every pair you look at. The game is read in your browser; nothing is uploaded. Where importing doesn't
   work, **Estimated Trading** prices pairs from the last hour's trades instead, as a rough guide.
-- **Market Ratios, Trade Volumes:** every price you've read in the last 4 hours, and what traded last hour.
+- **Market Ratios, Volumes:** every price you've read in the last 4 hours, and what traded last hour.
 - **Gold fees** come from the game's own data, as listed on poedb, and are shown but never edited.
 
 ## How it's built
