@@ -51,12 +51,30 @@ export function ratioValues(name) {
   return out;
 }
 
-// Forgets the league's prices read before `before` (their rows' orders and reads stay, for listings and the read history).
-export function dropOld(name, before) {
-  const ratios = leagueState(name).ratios;
-  const old = Object.keys(ratios).filter((key) => ratios[key].verifiedAt < before);
-  for (const key of old) delete ratios[key];
-  if (old.length) save();
+// Forgets, in every league, what's no longer used (`now`, ms): prices read over SCAN_FOR ago, list reads over READS_FOR
+// old, and orders as last read over SCAN_FOR ago, except the rows in `keep` ({ [league]: Set of row keys }: the started
+// listing steps', whose fill times count from them). The read history (history.js) keeps its own.
+export function dropOld(now, keep = {}) {
+  let dropped = false;
+  const drop = (rows, old) => {
+    for (const key of Object.keys(rows ?? {})) {
+      if (!old(key, rows[key])) continue;
+      delete rows[key];
+      dropped = true;
+    }
+  };
+  for (const [name, ls] of Object.entries(state.leagues)) {
+    drop(ls.ratios, (_, r) => now - r.verifiedAt > SCAN_FOR);
+    drop(ls.lists, (key, l) => now - l.at > SCAN_FOR && !keep[name]?.has(key));
+    for (const [key, reads] of Object.entries(ls.reads ?? {})) {
+      const kept = reads.filter((r) => now - r.at <= READS_FOR);
+      if (kept.length === reads.length) continue;
+      dropped = true;
+      if (kept.length) ls.reads[key] = kept;
+      else delete ls.reads[key];
+    }
+  }
+  if (dropped) save();
 }
 
 // Manual prices (SPEC.md §3.2b), typed in, one per row: `manual: { [rowKey]: { value: [l, r], at } }`, kept until changed.
@@ -71,13 +89,13 @@ export function setManual(name, key, value) {
 // or null) and when it was read. Hidden from the user; used for Instant steps while it's recent and its
 // best price is still the row's ratio (app.js listFor).
 // Each read is also kept for an hour (READS_FOR) in the row's `reads`, oldest first, for its undercutting (undercut.js),
-// and for HISTORY_FOR in the read history (history.js).
+// and for HISTORY_FOR in the read history (history.js). Like setRatio and setEmpty, it leaves saving to the caller, so a
+// read of several rows is saved once.
 export function setList(name, key, levels, rest, at = Date.now()) {
   const ls = leagueState(name);
   (ls.lists ??= {})[key] = { levels, rest, at };
   const reads = (ls.reads ??= {});
   reads[key] = [...(reads[key] ?? []).filter((r) => at - r.at <= READS_FOR), { at, levels }];
-  save();
   addRead(name, key, levels, rest, at);
 }
 export const listOf = (name, key) => leagueState(name).lists?.[key] ?? null;
@@ -87,11 +105,9 @@ export const readsOf = (name, key) => leagueState(name).reads?.[key] ?? [];
 // `stock` is how much is on offer at it.
 export function setRatio(name, key, value, digits, stock) {
   leagueState(name).ratios[key] = { value, digits, stock, verifiedAt: Date.now() };
-  save();
 }
 
 // A box the game showed with no trades: read, with no price.
 export function setEmpty(name, key) {
   leagueState(name).ratios[key] = { value: null, empty: true, verifiedAt: Date.now() };
-  save();
 }

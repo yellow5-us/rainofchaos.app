@@ -45,10 +45,9 @@ export function setNoOrders(rows) {
 }
 
 // Stock on offer, from the latest hour: stockOf(x, y) is how much of `x` was listed against `y` (null if
-// unknown). An Instant step needs DEPTH_FACTOR times its own size on offer behind the price it uses, or it's "thin":
+// unknown). An Instant step needs its own size on offer behind the price it uses, or it's "thin":
 // Available Trades (Fast) fills orders offering what you receive, so it's the stock of `recv` vs what you receive. A
 // Competing step posts its own order, which needs nobody else's stock.
-export const DEPTH_FACTOR = 1; // enough stock to cover the order itself
 let stockOf = () => null;
 export function setStock(fn) {
   stockOf = fn ?? (() => null);
@@ -88,8 +87,10 @@ export function setUndercut(fn) {
 // What drains a Competing queue, in what the step receives per hour: the pace less the undercutting (`undercut`, in what
 // the step gives, at `per` received per given), no less than UNDERCUT_FLOOR of the pace.
 export const drain = (pace, undercut, per) => Math.max(pace - (undercut ?? 0) * per, UNDERCUT_FLOOR * pace);
-// Whether two ratios [l, r] are the same price.
+// Whether two ratios [l, r] are the same price. Ratios are in a row's order (what's wanted : what's offered): `a` is
+// better (more competitive) than `b` when it asks less of what's wanted for each unit offered, and not the same price.
 export const sameRatio = (a, b) => Math.abs(a[0] * b[1] - b[0] * a[1]) <= 1e-9 * a[0] * b[1];
+export const better = (a, b) => a[0] * b[1] < b[0] * a[1] && !sameRatio(a, b);
 // readEmpty(key): the game showed that row with no trades, so it has no price.
 let readEmpty = () => false;
 export function setReadEmpty(fn) {
@@ -341,7 +342,7 @@ export function leg(ratios, method, recv, give, have, pinned = null, queued = nu
     undercut: method === FAST ? null : undercut, // Competing: orders posted ahead per hour, in `give` units
     bought: method === FAST ? null : bought, // Competing: the row's orders bought per hour as measured, in `give` units
     ahead, // Competing: stock posted ahead of this step's orders, in `give` units
-    thin: method === FAST && depth !== null && size > 0 && depth < size * DEPTH_FACTOR, // Available: too little to fill
+    thin: method === FAST && depth !== null && size > 0 && depth < size, // Available: too little to fill
     recv, give, have, lots, lotRecv, lotGive, received, given, orders, ratio,
     rounded: !!rounded,
     tooBig: !lotsPerOrder && !rounded,

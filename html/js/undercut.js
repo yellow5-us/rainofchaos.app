@@ -1,16 +1,13 @@
 // How a row's list moves (SPEC.md §3.6), from its list reads of the last hour: how fast orders are posted ahead of its
 // best price (undercutting) and how fast its orders are bought, for fill times.
+import { better, sameRatio as same } from "./calc.js";
+
 export const READS_FOR = 60 * 60 * 1000; // list reads kept and used
 export const MIN_GAP = 2 * 60 * 1000; // reads closer than this aren't compared (the same orders, read again)
 export const MAX_GAP = 20 * 60 * 1000; // further apart, too much can have come and gone between them
 export const MIN_SPAN = 20 * 60 * 1000; // compared time needed before a rate counts
 export const MIN_UNDERCUTS = 3; // comparisons with stock ahead needed for a rate: fewer are one-off orders, not a flow
 export const MIN_BUYS = 3; // comparisons with stock bought needed for a rate: fewer are too few trades to time
-
-// Ratios [l, r] in the row's order (what's wanted : what's offered): `a` is more competitive than `b` when it asks less
-// of what's wanted for each unit offered.
-const better = (a, b) => a[0] * b[1] < b[0] * a[1];
-const same = (a, b) => a[0] === b[0] && a[1] === b[1];
 
 // reads: [{ at, levels: [{ ratio, stock }] }], oldest first, best price first. Each read compared with the last one
 // taken (at least MIN_GAP before it, at most MAX_GAP): `found(earlier, later)` is how much of the offered currency the
