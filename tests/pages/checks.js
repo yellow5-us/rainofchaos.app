@@ -1051,8 +1051,8 @@ export const CHECKS = {
 
   ratios: { game: "poe1", seed: "fresh", hash: "#/market-ratios", async run(t, seed) {
     await ready();
-    t.eq([tabs(), activeTab(), $("#main .clear-all")], [["Competitive (5)", "Instant (5)", "Estimated (1)", "Manual (0)"], "Competitive (5)", null],
-      "tabs: Competitive, the default, Instant, Estimated (Orb of Fusing, never scanned) and Manual; no Clear All");
+    t.eq([tabs(), activeTab(), $("#main .clear-all")], [["Competitive (5)", "Instant (5)", "Estimated (2)", "Manual (0)"], "Competitive (5)", null],
+      "tabs: Competitive, the default, Instant, Estimated (Chaos ↔ Divine, and Orb of Fusing, never scanned) and Manual; no Clear All");
     t.eq(text($("tbody[data-row] .group-head")), "Chaos ↔ Divine", "Chaos ↔ Divine first");
     t.eq($$("tbody[data-row] .group-head").length, 5, "every currency scanned");
     const times = new Set(Object.values(seed.leagues[seed.league].ratios).map((r) => r.verifiedAt));
@@ -1062,8 +1062,8 @@ export const CHECKS = {
       .map((x) => x.title), [], "tags' titles: Scanned <date>");
     await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Estimated")));
     t.eq(w.location.hash, "#/market-ratios/estimated", "Estimated's address");
-    t.eq($$("tbody[data-row]").map((b) => b.dataset.row), ["CurrencyRerollSocketLinks"], "Estimated: the currency with an estimate");
-    const est = $$("#main table.ratios tbody[data-row] tr:not(.group) td.r-tags").map((td) => td.textContent.trim());
+    t.eq($$("tbody[data-row]").map((b) => b.dataset.row), ["hubs", "CurrencyRerollSocketLinks"], "Estimated: Chaos ↔ Divine first, then the currency with an estimate");
+    const est = $$("#main table.ratios tbody[data-row='CurrencyRerollSocketLinks'] tr:not(.group) td.r-tags").map((td) => td.textContent.trim());
     t.eq(est.slice(0, 2), ["estimated", "estimated"], "its Chaos line at the estimated price, both ways");
     t.ok(!$("#main table.ratios .manual-edit, #main table.ratios input"), "nothing to edit");
     await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Manual")));

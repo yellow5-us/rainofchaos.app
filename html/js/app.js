@@ -1081,7 +1081,9 @@ const LINE_HAS = {
   manual: (line) => rowsOfLine(line).some((key) => manualFor(key)),
 };
 function ratesPage(tab) {
-  const has = (t) => (g) => g.lines.some(LINE_HAS[t]);
+  // Chaos ↔ Divine leads Estimated whenever it has a price, scanned or estimated (it's in every route).
+  const hubsPriced = (t, g) => !g.id && t === "estimated" && g.lines.some((line) => rowsOfLine(line).some((k) => priceSource(scanOf(k), "estimated", ...k.split(">"))));
+  const has = (t) => (g) => hubsPriced(t, g) || g.lines.some(LINE_HAS[t]);
   // Each tab counts currencies (Chaos ↔ Divine as one), as its list and paging do.
   const count = (t) => items().map(itemGroup).filter(has(t)).length + (has(t)(hubGroup()) ? 1 : 0);
   const tabRow = `<div class="tabs">${Object.entries(RATIO_TABS).map(([t, label]) => `<a href="#/market-ratios${t === "competitive" ? "" : `/${t}`}"
