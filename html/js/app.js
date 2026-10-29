@@ -2,7 +2,7 @@
 // #/trade-recommendations (Competitive Trading), with /available for Instant Trading and /estimated for Estimated Trading,
 // #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/market-ratios.
 import {
-  allResults, drain, ESTIMATE, estimateRatio, FAST, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
+  allResults, drain, ESTIMATE, estimateRatio, FAST, priceOf, priceSource, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
   rowOf, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
 } from "./calc.js";
 import {
@@ -190,6 +190,8 @@ const ratioOf = (key) => {
   return r && Date.now() - r.verifiedAt < store.SCAN_FOR ? r : undefined;
 };
 const isScanned = (key) => !!ratioOf(key);
+// Just one row's scanned price, as the calculation's `ratios` (a copy of them all, ratios(), is too slow for every cell).
+const scanOf = (key) => ({ [key]: ratioOf(key)?.value });
 // A row's Manual price (SPEC.md §3.2b), or null.
 const manualFor = (key) => store.manualOf(league(), key)?.value ?? null;
 const MANUAL_TITLE = "Your price, typed in";
@@ -257,7 +259,7 @@ const lineOf = (x, y) => {
 // it to the Competing price, or with none scanned the estimate (greyed out while it's that).
 const stepRow = (s) => rowOf(s.method, s.recv, s.give);
 // Where a Manual price's reset goes: the Competing price scanned, else the estimate.
-const resetRatio = (recv, give) => ratioOf(rowKey(recv, give))?.value ?? estimateRatio(recv, give);
+const resetRatio = (recv, give) => priceOf(scanOf(rowKey(recv, give)), "estimated", recv, give);
 // A Manual price's two numbers, shaded, each a box while it's being typed (editingManual), for row `key` showing `v`
 // (`shown(i)` its numbers' text), at `where`; and its reset.
 const manualPart = (where, key, v, i, shown = (n) => num(v[n])) => (editingManual === `${where}|${key}|${i}`
@@ -406,13 +408,12 @@ function spreadCell(a, b) {
 // shades its two numbers, each a box once clicked, setting the row's Manual price, and a Manual price has its reset. With
 // none of them, as anywhere else.
 function shownCells(a, b, key, flip, kind, edit = false) {
-  const [x, y] = key.split(">"), manual = kind === "manual" ? manualFor(key) : null, scan = ratioOf(key)?.value ? ratioOf(key) : null;
-  const v = manual ?? scan?.value ?? estimateRatio(x, y);
-  if (!v) return ratioCells(a, b, key, flip, "", "no estimated price");
-  const digits = !manual && scan ? scan.digits : null;
+  const price = priceSource(scanOf(key), kind, ...key.split(">"));
+  if (!price) return ratioCells(a, b, key, flip, "", "no estimated price");
+  const v = price.value, digits = price.from === "scan" ? ratioOf(key).digits : null;
   const shown = (i) => fixed(v[i], digits?.[i] ?? decimalsOf(v[i]));
   const part = (i) => (edit ? manualPart("dlg", key, v, i, shown) : shown(i));
-  const tag = manual ? manualTag() + (edit ? ` ${manualReset(key, v)}` : "") : scan ? scanTag(key) : estimateTag();
+  const tag = price.from === "manual" ? manualTag() + (edit ? ` ${manualReset(key, v)}` : "") : price.from === "scan" ? scanTag(key) : estimateTag();
   const [l, r] = flip ? [1, 0] : [0, 1];
   return `<td class="r-icon r-end">${iconOnly(a)}</td><td class="r-num r-end">${part(l)}</td><td class="r-colon">:</td><td class="r-num">${
     part(r)}</td><td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tag}</td>`;
@@ -1811,8 +1812,8 @@ function endCancel(take) {
 // Esc leaves it as it was.
 function endManual(take) {
   if (!editingManual) return;
-  const [, key, side] = editingManual.split("|"), [x, y] = key.split(">");
-  const v = roundHalfUp(Number($("#manual-ratio")?.value), 2), was = manualFor(key) ?? ratioOf(key)?.value ?? estimateRatio(x, y);
+  const [, key, side] = editingManual.split("|");
+  const v = roundHalfUp(Number($("#manual-ratio")?.value), 2), was = priceOf(scanOf(key), "manual", ...key.split(">"));
   editingManual = null;
   if (take && v > 0 && was && was[Number(side)] !== v) {
     const value = [...was];

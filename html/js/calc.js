@@ -127,6 +127,16 @@ export const estimateRatio = (recv, give) => {
   const per = estimateOf(recv, give);
   return per > 0 ? shown(per) : null;
 };
+// Where a row's price comes from for a kind (SPEC.md §3.2b–c): "manual", its Manual price, else as "estimated": the scan
+// (in `ratios`), else the estimate. { value: [l, r] as a row recv:give, from: "manual" | "scan" | "estimate" }, or null.
+export function priceSource(ratios, kind, recv, give) {
+  const key = rowKey(recv, give), manual = kind === "manual" ? manualOf(key) : null;
+  if (manual) return { value: manual, from: "manual" };
+  if (ratios[key]) return { value: ratios[key], from: "scan" };
+  const estimate = estimateRatio(recv, give);
+  return estimate ? { value: estimate, from: "estimate" } : null;
+}
+export const priceOf = (ratios, kind, recv, give) => priceSource(ratios, kind, recv, give)?.value ?? null;
 
 // Gold for a set of orders receiving `recv`, rounded up per order; null when the fee isn't known.
 export function goldCost(recv, orders) {
@@ -274,7 +284,7 @@ function bookLeg(book, recv, give, have) {
 export function leg(ratios, method, recv, give, have, pinned = null, queued = null) {
   const key = rowOf(method, recv, give);
   const read = ratios[key];
-  if (method === MANUAL && !pinned) pinned = manualOf(key) ?? read ?? estimateRatio(recv, give);
+  if (method === MANUAL && !pinned) pinned = priceOf(ratios, "manual", recv, give);
   if (pinned) ratios = { [key]: posts(method) ? pinned : [pinned[1], pinned[0]] };
   else if (method === ESTIMATE) ratios = { [key]: estimateRatio(recv, give) };
   let row = ratios[key];

@@ -1,6 +1,6 @@
 // Runs in the browser (tests/index.html) or headless with macOS's JavaScriptCore:
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc -m tests/calc.test.js
-import { allResults, ESTIMATE, estimateRatio, leg, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
+import { allResults, ESTIMATE, estimateRatio, leg, priceSource, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
 import { CHAOS, DIVINE, EXALTED, rowKey, setCurrencies, setGold } from "../html/js/items.js";
 import { boughtRate, undercutRate } from "../html/js/undercut.js";
 
@@ -423,6 +423,12 @@ eq(hubBack.map((x) => [x.route.id, x.route.path(DIVINE), x.unspent, x.gain]), [[
   eq(runRoute(only, CHROM, route, SLOW, 25).missing, rowKey(CHROM, CHAOS), "not estimating: the missing price stops the route");
   eq(runRoute(only, CHROM, route, SLOW, 25, { [stepKey(CHAOS, DIVINE)]: FAST }, DIVINE, [], true).steps[0].method, FAST,
     "estimating: a scanned step can be Instant");
+  // Where a price comes from: Manual, else the scan, else the estimate ("estimated" skips Manual).
+  setManual((key) => (key === rowKey(CHROM, CHAOS) ? [1, 3.6] : null));
+  eq(priceSource(only, "manual", CHROM, CHAOS), { value: [1, 3.6], from: "manual" }, "price: the Manual one first");
+  eq(priceSource(only, "estimated", CHROM, CHAOS), { value: [1, 3.97], from: "estimate" }, "price: estimated skips Manual");
+  eq(priceSource(only, "manual", CHAOS, DIVINE), { value: [380, 1], from: "scan" }, "price: the scan before the estimate");
+  setManual(null);
   setEstimate(null);
   eq(runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true).estimate && runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true).missing,
     rowKey(CHROM, CHAOS), "estimating with no estimate: missing, marked as an estimate's");
