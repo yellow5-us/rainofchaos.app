@@ -45,7 +45,7 @@ const MODES = {
   estimated: { method: SLOW, estimate: true, tab: "Estimated Trading" },
 };
 // What a step's Type selector calls each method.
-const METHOD_NAMES = { [FAST]: "Instant", [SLOW]: "Competitive", [MANUAL]: "Manual", [ESTIMATE]: "Estimate" };
+const METHOD_NAMES = { [FAST]: "Instant", [SLOW]: "Competitive", [MANUAL]: "Manual", [ESTIMATE]: "Estimated" };
 const DEFAULT_MODE = "competitive";
 let editLines = null; // [[a, b], ...] ratio lines open in the dialog
 let editingManual = null; // "where|rowKey|side": the Manual price's number being typed (side 0 or 1 of the row), and where
@@ -123,7 +123,7 @@ const missingText = (r, hint = "") => `<p>${missingTag(r)} ${emptyIn(r) ? "The g
   : r.estimate ? "Not scanned, and no trades in the last hours:" : "Not read from the game yet:"} ${
   r.missing.split(">").map(iconOnly).join(" : ")}.${emptyIn(r) || !hint ? "" : ` ${hint}`}</p>`;
 const missingTag = (r) => (emptyIn(r) ? noOrdersTag(r.method === FAST)
-  : `<span class="tag warn">${r.estimate ? "no estimate" : "not scanned"}</span>`);
+  : `<span class="tag warn">${r.estimate ? "no estimated price" : "not scanned"}</span>`);
 // Tags in table cells go on their own line under the value they're about, so the values stay lined up.
 const below = (tag) => (tag ? `<div class="tags-below">${tag}</div>` : "");
 // Gold's icon, before its amount as any currency's.
@@ -172,7 +172,7 @@ const verifiedTag = (at, title, href = null) => href
   : ` <span class="tag verified" title="${title}" data-scan-at="${at}">${age(at)}</span>`;
 // A price that isn't scanned, at its estimate (SPEC.md §3.2c): muted, outlined. `title` is its hover.
 const ESTIMATE_TITLE = "No scan yet: the average of the last hour's trades. Import Market Ratios reads the real price.";
-const estimateTag = (title = ESTIMATE_TITLE) => ` <span class="tag estimate" title="${title}">estimate</span>`;
+const estimateTag = (title = ESTIMATE_TITLE) => ` <span class="tag estimate" title="${title}">estimated</span>`;
 setInterval(() => {
   let old = false;
   for (const el of document.querySelectorAll("[data-scan-at]")) {
@@ -266,7 +266,7 @@ const manualPart = (where, key, v, i, shown = (n) => num(v[n])) => (editingManua
 function manualReset(key, v) {
   const [x, y] = key.split(">"), scanned = ratioOf(key)?.value, back = resetRatio(x, y), off = back && !sameRatio(back, v);
   return `<button type="button" class="reset" data-manual-reset="${key}"${off ? "" : " disabled"}
-    title="${scanned ? "Back to the Competing price" : back ? "Back to the estimate" : "No Competing price scanned"}">reset</button>`;
+    title="${scanned ? "Back to the Competing price" : back ? "Back to the estimated price" : "No Competing price scanned"}">reset</button>`;
 }
 function manualRatio(s, where) {
   const key = rowKey(s.recv, s.give);
@@ -408,7 +408,7 @@ function spreadCell(a, b) {
 function shownCells(a, b, key, flip, kind, edit = false) {
   const [x, y] = key.split(">"), manual = kind === "manual" ? manualFor(key) : null, scan = ratioOf(key)?.value ? ratioOf(key) : null;
   const v = manual ?? scan?.value ?? estimateRatio(x, y);
-  if (!v) return ratioCells(a, b, key, flip, "", "no estimate");
+  if (!v) return ratioCells(a, b, key, flip, "", "no estimated price");
   const digits = !manual && scan ? scan.digits : null;
   const shown = (i) => fixed(v[i], digits?.[i] ?? decimalsOf(v[i]));
   const part = (i) => (edit ? manualPart("dlg", key, v, i, shown) : shown(i));
@@ -1087,7 +1087,7 @@ function ratesPage(tab) {
     class="${t === tab ? "active" : ""}">${label} (${num(count(t))})</a>`).join("")}</div>`;
   if (!count(tab)) {
     return `${tabRow}<p class="muted">${tab === "competitive" || tab === "available" ? `No ${tab === "competitive" ? "Competing" : "Available"} Trades have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`
-      : tab === "estimated" ? `No estimates for ${esc(league())}: every pair traded lately is scanned.`
+      : tab === "estimated" ? `No estimated prices for ${esc(league())}: every pair traded lately is scanned.`
       : `No manual prices for ${esc(league())}. Set a step's Type to Manual, or type into a price's window, to add one.`}</p>`;
   }
   const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(tab));

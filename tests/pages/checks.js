@@ -429,17 +429,17 @@ export const CHECKS = {
       "lists Chromatic's routes, and Orb of Fusing's (never scanned)");
     const tag = $(".tag", tradeRow(CHROM, "direct").cells[COL.age]);
     t.eq([tag?.textContent, tag?.classList.contains("estimate"), tag?.title],
-      ["estimate", true, "Some prices are the average of the last hour's trades, not a scan"], "tag: estimate");
+      ["estimated", true, "Some prices are the average of the last hour's trades, not a scan"], "tag: estimated");
     t.ok(/^[+-]/.test(text(tradeRow(CHROM, "direct").cells[COL.profit]).replace("Chaos Orb ", "")), "priced", text(tradeRow(CHROM, "direct").cells[COL.profit]));
     await go(`#/item/${CHROM}/estimated`);
     t.eq(tabs(), ["Competitive Trading", "Instant Trading", "Estimated Trading"], "item page: three tabs");
-    t.eq($("#main h1 .tag")?.textContent, "estimate", "heading: the estimate tag");
+    t.eq($("#main h1 .tag")?.textContent, "estimated", "heading: the estimated tag");
     for (const box of routes()) if (!box.open) { $("summary", box).click(); await waitFor(() => box.open); }
     const steps = routes().flatMap((box) => $$("table.steps tbody tr", box));
     const est = steps.filter((tr) => $(".tag.estimate", ratioCell(tr)));
     t.ok(est.length && est.every((tr) => stepKey(tr) === `${CHROM}>${C}` || stepKey(tr) === `${C}>${CHROM}`),
       "estimate tags only on Chaos ↔ Chromatic steps", est.map(stepKey).join(", "));
-    t.ok(est.every((tr) => $("select", tr)?.value === "estimate" && $$("option", $("select", tr)).map((o) => o.textContent).join() === "Estimate,Manual"),
+    t.ok(est.every((tr) => $("select", tr)?.value === "estimate" && $$("option", $("select", tr)).map((o) => o.textContent).join() === "Estimated,Manual"),
       "their Type: Estimate, or Manual");
     t.ok(steps.filter((tr) => !est.includes(tr)).every((tr) => $("select.method", tr)?.value === "slow"), "scanned steps: the dropdown, Competitive");
     const direct = routes().find((r) => r.dataset.row === "direct");
@@ -458,7 +458,7 @@ export const CHECKS = {
     t.eq(estimated.filter((k) => k.startsWith(`${CHROM}|`)).sort(), [`after:${C}`, `before:${C}`].map((r) => `${CHROM}|${r}`).sort(),
       "Estimated: Chromatic's routes through Chaos only");
     t.ok(sections.untradeable?.includes("CurrencyRerollSocketLinks|direct"), "Orb of Fusing has no Divine market: Untradeable");
-    t.eq(text($(".tag", tradeRow("CurrencyRerollSocketLinks", "direct").cells[COL.profit])), "no estimate", "tagged no estimate");
+    t.eq(text($(".tag", tradeRow("CurrencyRerollSocketLinks", "direct").cells[COL.profit])), "no estimated price", "tagged no estimated price");
     await go("#/trade-recommendations");
     const scanned = Object.values(await openSections()).flat();
     t.ok(scanned.includes(`${CHROM}|direct`) && !scanned.includes(`${CHROM}|after:${C}`), "Competitive: Divine → Chromatic → Divine", scanned.join(", "));
@@ -738,7 +738,7 @@ export const CHECKS = {
     await go("#/my-listings");
     const row = () => $$("#main table.steps tbody tr")[0], cell = () => $$("td", row())[3];
     t.eq([$$("option", $("select.method", row())).map((o) => o.textContent), $("select.method", row()).value, cellTags(cell())],
-      [["Estimate", "Manual"], "estimate", ["estimate"]], "Chaos → Chromatic: an Estimate step, Estimate or Manual");
+      [["Estimated", "Manual"], "estimate", ["estimated"]], "Chaos → Chromatic: an Estimated step, Estimated or Manual");
     t.eq([$$(".step-buttons button", row()).length, text($(".estimate-note", row())), $(".estimate-note", row())?.title],
       [0, "Cannot trade", "Set its Type to Manual and type the price the game shows first"], "an Estimate step: no buttons, a warning instead");
     t.eq($$("option", $("select.method", $$("#main table.steps tbody tr")[1])).map((o) => o.textContent), ["Competitive", "Instant", "Manual"],
@@ -753,15 +753,15 @@ export const CHECKS = {
     $("#manual-ratio").value = "3.4";
     $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await sleep(50);
-    t.eq([$("[data-manual-reset]", cell())?.title, $("[data-manual-reset]", cell())?.disabled], ["Back to the estimate", false], "reset: back to the estimate");
+    t.eq([$("[data-manual-reset]", cell())?.title, $("[data-manual-reset]", cell())?.disabled], ["Back to the estimated price", false], "reset: back to the estimated price");
     await click($("[data-manual-reset]", cell()));
     t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "reset takes it back");
-    t.eq($$("option", $("select.method", row())).map((o) => o.textContent), ["Estimate", "Manual"], "Manual with no Competing price scanned: Estimate or Manual");
+    t.eq($$("option", $("select.method", row())).map((o) => o.textContent), ["Estimated", "Manual"], "Manual with no Competing price scanned: Estimated or Manual");
     const back = $("select.method", row());
     back.value = "estimate";
     back.dispatchEvent(new w.Event("change", { bubbles: true }));
     await waitFor(() => !$(".manual-edit", cell()));
-    t.eq([$("select.method", row()).value, cellTags(cell())], ["estimate", ["estimate"]], "back to Estimate");
+    t.eq([$("select.method", row()).value, cellTags(cell())], ["estimate", ["estimated"]], "back to Estimated");
     t.eq(saved(STORAGE.poe1).listings[0].methods[0], "slow", "kept as Competitive, for when it's scanned");
     // Scanned again: the step is back to the Type it was given, Competitive.
     const l = saved(STORAGE.poe1).listings[0];
@@ -1064,7 +1064,7 @@ export const CHECKS = {
     t.eq(w.location.hash, "#/market-ratios/estimated", "Estimated's address");
     t.eq($$("tbody[data-row]").map((b) => b.dataset.row), ["CurrencyRerollSocketLinks"], "Estimated: the currency with an estimate");
     const est = $$("#main table.ratios tbody[data-row] tr:not(.group) td.r-tags").map((td) => td.textContent.trim());
-    t.eq(est.slice(0, 2), ["estimate", "estimate"], "its Chaos line at the estimate, both ways");
+    t.eq(est.slice(0, 2), ["estimated", "estimated"], "its Chaos line at the estimated price, both ways");
     t.ok(!$("#main table.ratios .manual-edit, #main table.ratios input"), "nothing to edit");
     await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Manual")));
     t.eq(text($("#main > p.muted")), `No manual prices for ${LEAGUE.poe1}. Set a step's Type to Manual, or type into a price's window, to add one.`, "Manual: empty message");
