@@ -752,6 +752,13 @@ export const CHECKS = {
     t.eq([$("[data-manual-reset]", cell())?.title, $("[data-manual-reset]", cell())?.disabled], ["Back to the estimate", false], "reset: back to the estimate");
     await click($("[data-manual-reset]", cell()));
     t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "reset takes it back");
+    t.eq($$("option", $("select.method", row())).map((o) => o.textContent), ["Estimate", "Manual"], "Manual with no Competing price scanned: Estimate or Manual");
+    const back = $("select.method", row());
+    back.value = "estimate";
+    back.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => !$(".manual-edit", cell()));
+    t.eq([$("select.method", row()).value, cellTags(cell())], ["estimate", ["estimate"]], "back to Estimate");
+    t.eq(saved(STORAGE.poe1).listings[0].methods[0], "slow", "kept as Competitive, for when it's scanned");
     // Scanned again: the step is back to the Type it was given, Competitive.
     const l = saved(STORAGE.poe1).listings[0];
     l.methods[0] = "slow";

@@ -943,10 +943,11 @@ function listingBox(l) {
       const st = l.steps[s.index];
       return st.state !== "done" ? null : `<span title="How long it took">${took((st.doneAt - postedAt(l, s.index)) / 3600000)}</span>`;
     },
-    // A waiting step can change how it's traded (an Estimate step only to Manual); a started or done step says how it is.
+    // A waiting step can change how it's traded: with no Competing price scanned (an Estimate step's), only Estimate or
+    // Manual; a started or done step says how it is.
     trades: (s) => (l.steps[s.index].state === "waiting"
       ? methodSelect(`data-listing-step="${l.id}|${s.index}" data-ratio="${s.ratio.join(":")}"`, s.method,
-        s.method === ESTIMATE ? [ESTIMATE, MANUAL] : [SLOW, FAST, MANUAL])
+        s.method === ESTIMATE || (s.method === MANUAL && !isScanned(rowKey(s.recv, s.give))) ? [ESTIMATE, MANUAL] : [SLOW, FAST, MANUAL])
       : METHOD_NAMES[s.method]),
     // A waiting Manual step's ratio is typed in its cell.
     manual: (s) => (l.steps[s.index].state === "waiting" && s.method === MANUAL ? `${l.id}|${s.index}` : null),
@@ -1703,10 +1704,11 @@ main.addEventListener("change", (e) => {
   }
   if (input.dataset.listingStep) {
     const [id, i] = input.dataset.listingStep.split("|"), [slot, k] = stepSlot(listingOf(id), Number(i));
-    // Manual starts at the price last typed into it, else the price the step was using.
-    const typed = slot[k]?.typed;
-    slot[k] = input.value === MANUAL ? { method: MANUAL, ratio: typed ?? input.dataset.ratio.split(":").map(Number), typed }
-      : typed ? { method: input.value, typed } : input.value;
+    // Manual starts at the price last typed into it, else the price the step was using. Estimate is kept as Competitive:
+    // it's an Estimate step while its pair has no scan, and Competitive once it has.
+    const typed = slot[k]?.typed, method = input.value === ESTIMATE ? SLOW : input.value;
+    slot[k] = method === MANUAL ? { method: MANUAL, ratio: typed ?? input.dataset.ratio.split(":").map(Number), typed }
+      : typed ? { method, typed } : method;
     store.save();
     render();
     return;
