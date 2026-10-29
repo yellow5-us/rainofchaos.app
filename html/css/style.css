@@ -226,6 +226,8 @@ a.tag.manual:hover { background: var(--accent); color: var(--panel); }
 .tag.verified { background: var(--pos); color: var(--panel); text-decoration: none; font-weight: 600; }
 a.tag.verified:hover { opacity: 0.85; }
 /* A price that isn't scanned, at its estimate: muted and outlined, unlike a scan's filled tag. */
+/* In an Estimate listing step's buttons' place. */
+.estimate-note { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 .tag.estimate { color: var(--muted); border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent); }
 /* After a currency's name (an item page's heading): a little room from the name. */
 h1 > .tag.verified, h1 > .tag.estimate { margin-left: 0.3rem; }

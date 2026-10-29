@@ -738,6 +738,8 @@ export const CHECKS = {
     const row = () => $$("#main table.steps tbody tr")[0], cell = () => $$("td", row())[3];
     t.eq([$$("option", $("select.method", row())).map((o) => o.textContent), $("select.method", row()).value, cellTags(cell())],
       [["Estimate", "Manual"], "estimate", ["estimate"]], "Chaos → Chromatic: an Estimate step, Estimate or Manual");
+    t.eq([$$(".step-buttons button", row()).length, text($(".estimate-note", row())), $(".estimate-note", row())?.title],
+      [0, "Cannot trade", "Set its Type to Manual and type the price the game shows first"], "an Estimate step: no buttons, a warning instead");
     t.eq($$("option", $("select.method", $$("#main table.steps tbody tr")[1])).map((o) => o.textContent), ["Competitive", "Instant", "Manual"],
       "Chromatic → Chaos, scanned: its usual Types");
     const sel = $("select.method", row());
@@ -745,6 +747,7 @@ export const CHECKS = {
     sel.dispatchEvent(new w.Event("change", { bubbles: true }));
     await waitFor(() => $(".manual-edit", cell()));
     t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "Manual starts from the estimate, 1 : 3.5");
+    t.ok(!$("[data-listing-play]", row()).disabled, "Manual: its play button is on");
     await click($$(".manual-edit", cell())[1]);
     $("#manual-ratio").value = "3.4";
     $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));

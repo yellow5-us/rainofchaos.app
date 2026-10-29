@@ -773,7 +773,7 @@ function queueAt(s) {
 const SEEN = [0.95, 1.05], SEEN_GAP = 20 * 60 * 1000;
 function orderSeenAt(l, i, s) {
   const st = l.steps[i];
-  if (l.completed || st.state !== "waiting" || st.noHint || i !== nextStep(l) || !s?.lots || s.method === FAST) return null;
+  if (l.completed || st.state !== "waiting" || st.noHint || i !== nextStep(l) || !s?.lots || s.method === FAST || s.method === ESTIMATE) return null;
   const since = i === 0 ? l.added : l.steps[i - 1].doneAt ?? l.added;
   const reads = store.readsOf(league(), rowKey(s.recv, s.give));
   // The stock at its price in a read; 0 where its price would be among those shown, null below them.
@@ -801,7 +801,7 @@ function playStep(l, i, at = Date.now()) {
   const repost = st.repost ? { repost: true, left: st.left, method: st.method } : {};
   if (st.state === "progress") {
     l.steps[i] = { state: "waiting", ...repost };
-  } else if (st.state === "waiting" && i === nextStep(l) && s?.lots) {
+  } else if (st.state === "waiting" && i === nextStep(l) && s?.lots && s.method !== ESTIMATE) {
     l.steps[i] = { state: "progress", at, fixed: freeze(s), fillAtStart: s.fillHours, queue: queueAt(s),
       pace: paceOf(league(), s.recv, s.give), bought: s.bought ?? null, undercut: s.undercut ?? null, ahead: s.ahead ?? 0, ...repost };
   } else {
@@ -874,14 +874,17 @@ function uncancel(l, i) {
   delete st.whole;
 }
 
+const ESTIMATE_NOTE = "Set its Type to Manual and type the price the game shows first";
 const CHECK_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const PLAY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>`;
 const CANCEL_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></svg>`; // stop: the order taken down
 // A step's play button, cancel and check, in the order they happen, each an outline until it's on: play filled in green
 // once the step is started (or done), the check blue once it's done. The cancel is for the started step (its order taken
-// down partway), and for a repost waiting to start (undoing the cancel). Each is disabled where it can't be clicked.
-function stepButtons(l, i) {
+// down partway), and for a repost waiting to start (undoing the cancel). Each is disabled where it can't be clicked. An
+// Estimate step (`estimate`) has none: it has no price to post at until it's Manual or scanned, and says so instead.
+function stepButtons(l, i, estimate = false) {
   const st = l.steps[i], k = nextStep(l);
+  if (estimate && st.state === "waiting") return `<span class="estimate-note" title="${ESTIMATE_NOTE}">Cannot trade</span>`;
   const btn = (kind, on, can, title, iconSvg) => `<button type="button" class="step-check${on ? " on" : ""}" data-listing-${kind}="${l.id}|${i}"
     title="${title}" aria-label="${title}" aria-pressed="${on}"${can ? "" : " disabled"}>${iconSvg}</button>`;
   const started = st.state !== "waiting", done = st.state === "done", undo = done && i === lastDone(l);
@@ -956,7 +959,7 @@ function listingBox(l) {
       const st = l.steps[s.index];
       return st.whole && side === "have" ? `${copy} <span class="filled">(${num(s.given)} filled)</span>` : null;
     },
-    extra: l.completed ? null : (s) => stepButtons(l, s.index),
+    extra: l.completed ? null : (s) => stepButtons(l, s.index, s.method === ESTIMATE),
     // Under the next step, when a scan seems to show its order up: Yes starts it from that scan, No hides it for good.
     after: (s) => {
       const seen = orderSeenAt(l, s.index, s), id = `${l.id}|${s.index}`;
