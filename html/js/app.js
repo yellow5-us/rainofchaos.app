@@ -1080,6 +1080,17 @@ const LINE_HAS = {
   estimated: (line) => rowsOfLine(line).some((key) => estimateRatio(...key.split(">"))),
   manual: (line) => rowsOfLine(line).some((key) => manualFor(key)),
 };
+// What traded of a currency last hour in all its hub markets, in Divine: each hub's side of its market at the hubs' own
+// rate last hour (Chaos at Chaos : Divine's), Divine as is; 0 for a hub with no rate.
+function tradedInDiv(id) {
+  const lg = rates.leagues[league()], end = currencies.end;
+  const perEnd = (h) => {
+    if (h === end) return 1;
+    const v = pairVolume(lg, h, end);
+    return v?.[0] > 0 ? v[1] / v[0] : 0;
+  };
+  return currencies.hubs.filter((h) => h !== id).reduce((sum, h) => sum + (pairVolume(lg, id, h)?.[1] ?? 0) * perEnd(h), 0);
+}
 function ratesPage(tab) {
   const has = (t) => (g) => g.lines.some(LINE_HAS[t]);
   // Each tab counts currencies (Chaos ↔ Divine as one), as its list and paging do.
@@ -1091,11 +1102,15 @@ function ratesPage(tab) {
       : tab === "estimated" ? `No estimated prices for ${esc(league())}: nothing has traded in the last 4 hours.`
       : `No manual prices for ${esc(league())}. Set a step's Type to Manual, or type into a price's window, to add one.`}</p>`;
   }
-  const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(tab));
-  // The latest read first (after Chaos ↔ Divine, which always leads when it's in the list); estimates by name.
+  // Estimated shows only the lines with an estimate (one has both ways or neither).
+  const shown = (g) => (tab === "estimated" ? { ...g, lines: g.lines.filter(LINE_HAS.estimated) } : g);
+  const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(tab)).map(shown);
+  // After Chaos ↔ Divine, which always leads when it's in the list: the latest read first; on Estimated, the most traded
+  // last hour first, in Divine.
   const readAt = (g) => Math.max(...g.lines.flatMap(rowsOfLine).map((k) => (tab === "manual" ? store.manualOf(league(), k)?.at : ratioOf(k)?.verifiedAt) ?? 0));
-  if (tab !== "estimated") found.sort((x, y) => readAt(y) - readAt(x));
-  const lead = [hubGroup()].filter(has(tab));
+  const traded = new Map(found.map((g) => [g, tab === "estimated" ? tradedInDiv(g.id) : readAt(g)]));
+  found.sort((x, y) => traded.get(y) - traded.get(x));
+  const lead = [hubGroup()].filter(has(tab)).map(shown);
   return `${tabRow}
     ${searchBox("Search currencies")}
     ${pager(found.length)}
