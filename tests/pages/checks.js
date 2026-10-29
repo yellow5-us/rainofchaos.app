@@ -316,10 +316,12 @@ export const CHECKS = {
     await click($("#main .guide [data-import]"));
     t.ok(!liveDialog() && $("#live-dialog.collapsed"), "another hides it again, as the header's button does");
     t.eq(text($("#main .guide > :first-child")), "This site helps guide your Currency Exchange usage to make profits.", "first card, above the disclaimer");
-    const kofi = (a) => [a?.getAttribute("href"), a?.target, a?.rel];
-    t.eq(kofi($("header a.support")), ["https://ko-fi.com/prinny5", "_blank", "noopener"], "header Support link opens Ko-fi in a new tab");
-    t.eq(text($("header a.support")), "Support", "header Support link's text");
-    t.eq(kofi($("#main .guide section:last-child a")), kofi($("header a.support")), "Support card links to Ko-fi too");
+    const link = (a) => [a?.getAttribute("href"), a?.target, a?.rel];
+    t.eq(link($("header a.report")), ["https://github.com/yellow5-us/rainofchaos.app/issues/new", "_blank", "noopener"], "header Report a Bug link opens a new GitHub issue in a new tab");
+    t.eq(text($("header a.report")), "Report a Bug", "header Report a Bug link's text");
+    t.eq(link($("header a.support")), ["https://ko-fi.com/prinny5", "_blank", "noopener"], "header Support link opens Ko-fi in a new tab");
+    t.eq([text($("header a.support")), $("header a.report + a.support") !== null], ["Support", true], "header Support link's text, right of Report a Bug");
+    t.eq(link($("#main .guide section:last-child a")), link($("header a.support")), "Support card links to Ko-fi too");
   } },
 
   homePoe2: { game: "poe2", seed: "empty", hash: "#/home", async run(t) {
