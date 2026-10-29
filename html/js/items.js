@@ -15,10 +15,12 @@ export function setCurrencies({ hubs, end, sellTo }) {
 export const isBase = (id) => currencies.hubs.includes(id);
 
 let catalog = {};
+let byName = new Map(); // catalog name -> id
 let gold = {};
 
 export function setCatalog(data) {
   catalog = data;
+  byName = new Map(Object.entries(data).filter(([, c]) => c.name).map(([id, c]) => [c.name, id]).reverse());
 }
 
 // Gold per unit received, from the game's gold list. Unknown fees are null.
@@ -35,9 +37,9 @@ export const GOLD_ICON = "https://web.poecdn.com/image/Art/2DItems/Currency/Ruth
 // Every currency name in the catalog: what a snip's names are told apart from.
 export const catalogNames = () => [...new Set(Object.values(catalog).map((c) => c.name).filter(Boolean))];
 // The id of a currency by its catalog name, or null.
-export const idOfName = (name) => Object.keys(catalog).find((id) => catalog[id].name === name) ?? null;
+export const idOfName = (name) => byName.get(name) ?? null;
 
-export const itemOf = (id) => ({ id, slug: id, name: nameOf(id) });
+export const itemOf = (id) => ({ id, name: nameOf(id) });
 
 // Every currency in a league that trades against a hub, sorted by name.
 export function itemsIn(league) {

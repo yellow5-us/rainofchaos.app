@@ -2,7 +2,7 @@
 // #/trade-recommendations (Competitive Trading), with /available for Instant Trading and /estimated for Estimated Trading,
 // #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/market-ratios.
 import {
-  allResults, drain, ESTIMATE, estimateRatio, FAST, priceOf, priceSource, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
+  allResults, better, drain, ESTIMATE, estimateRatio, FAST, priceOf, priceSource, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
   rowOf, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
 } from "./calc.js";
 import {
@@ -61,7 +61,10 @@ const SHARE_NAME = `Share ${GAME_WINDOW} Screen`; // what the import window's re
 // ---------- formatting ----------
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const num = (n) => (n == null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 3 }));
+// Formatters are made once: building one per number is most of a big page's drawing time.
+const NUM = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
+const CENTS = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const num = (n) => (n == null ? "—" : NUM.format(n));
 const signed = (n) => (n > 0 ? `+${num(n)}` : num(n));
 const signClass = (n) => (n > 0 ? "pos" : n < 0 ? "neg" : "");
 
@@ -151,25 +154,30 @@ const baseId = () => store.state.base;
 const start = () => store.state.start[baseId()];
 // Hub names without " Orb" ("Chaos", "Divine").
 const hubName = (id) => nameOf(id).replace(/ Orb$/, "");
-const items = () => itemsIn(rates.leagues[league()]);
+// The league's items, worked out once per league's rates (they don't change once loaded). Not to be changed in place.
+const itemsMemo = new WeakMap();
+const items = () => {
+  const lg = rates.leagues[league()];
+  if (!lg) return [];
+  if (!itemsMemo.has(lg)) itemsMemo.set(lg, itemsIn(lg));
+  return itemsMemo.get(lg);
+};
 // What Trade Recommendations lists: every item plus the hubs other than the start currency (SPEC.md §4.1).
 const tradeItems = () => [...currencies.hubs.filter((h) => h !== baseId()).map(itemOf), ...items()]
   .sort((x, y) => x.name.localeCompare(y.name));
-const noOrderRows = () => new Set(rates.leagues[league()]?.noOrders ?? []);
 const matches = (name) => name.toLowerCase().includes(query.trim().toLowerCase());
 
 // A scanned ratio's tag is just how long ago it was read ("<1m", "3m", "2h"), green: a scan is used for SCAN_FOR (store.js),
 // then forgotten. The page counts them up every SCAN_TICK and is drawn again when one runs out.
 const SCAN_TICK = 15000;
 // When a scan was read, for hovering over its age or tag: "Oct 9, 2026, 3:04 PM" in the viewer's own format.
-const scanDate = (at) => new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const SCAN_DATE = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+const scanDate = (at) => SCAN_DATE.format(at);
 const age = (at) => {
   const m = Math.floor((Date.now() - at) / 60000);
   return m < 1 ? "<1m" : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`;
 };
-const verifiedTag = (at, title, href = null) => href
-  ? ` <a class="tag verified" href="${href}" title="${title}" data-scan-at="${at}">${age(at)}</a>`
-  : ` <span class="tag verified" title="${title}" data-scan-at="${at}">${age(at)}</span>`;
+const verifiedTag = (at, title) => ` <span class="tag verified" title="${title}" data-scan-at="${at}">${age(at)}</span>`;
 // A price that isn't scanned, at its estimate (SPEC.md §3.2c): muted, outlined. `title` is its hover.
 const ESTIMATE_TITLE = "No scan yet: the average of the last hour's trades. Import Market Ratios reads the real price.";
 const estimateTag = (title = ESTIMATE_TITLE) => ` <span class="tag estimate" title="${title}">estimated</span>`;
@@ -198,8 +206,7 @@ const MANUAL_TITLE = "Your price, typed in";
 const manualTag = () => ` <span class="tag estimate" title="${MANUAL_TITLE}">manual</span>`;
 const lineScanned = ([a, b]) => isScanned(rowKey(a, b)) || isScanned(rowKey(b, a));
 // A ratio's tag: its scan's age, else nothing.
-const scanTag = (key, href = null) => (isScanned(key)
-  ? verifiedTag(ratioOf(key).verifiedAt, `Scanned ${scanDate(ratioOf(key).verifiedAt)}`, href) : "");
+const scanTag = (key) => (isScanned(key) ? verifiedTag(ratioOf(key).verifiedAt, `Scanned ${scanDate(ratioOf(key).verifiedAt)}`) : "");
 // Every pair among an item and the hubs (vs Chaos, vs Divine, Chaos vs Divine), both ways: every price any of its routes
 // uses (its page's tag).
 const tradeKeys = (id) => {
@@ -382,10 +389,6 @@ function ratioCells(a, b, key, flip, tags = "", none = "not scanned") {
     : `<td class="r-none muted" colspan="3">${empty}</td>`;
   return `<td class="r-icon r-end">${iconOnly(a)}</td>${middle}<td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tags}</td>`;
 }
-// The Available column (flip) reads row B:A, the Competing one row A:B; either may have no orders. Only the dialog says
-// so (it's opened from the trade pages); Market Ratios doesn't need it.
-const ratioCell = (a, b, key, flip, withNoOrders) =>
-  ratioCells(a, b, key, flip, `${scanTag(key, "#/market-ratios")}${withNoOrders && noOrderRows().has(key) ? below(noOrdersTag(flip)) : ""}`);
 
 // The game shows a pair as "A : B" both ways. By default it's "Available Trades", the orders already on
 // the other side: internal row B:A, so it's drawn flipped. Holding Alt shows "Competing Trades", the
@@ -420,10 +423,11 @@ function shownCells(a, b, key, flip, kind, edit = false) {
     part(r)}</td><td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tag}</td>`;
 }
 // One line of a pair's prices: as scanned, or as `kind` shows them (shownCells: "estimated", "manual").
-const ratioLine = ([a, b], withStats, withNoOrders = false, kind = null, edit = false) => {
+// The Available column (flip) reads row B:A, the Competing one row A:B.
+const ratioLine = ([a, b], withStats, kind = null, edit = false) => {
   const v = withStats && pairVolume(rates.leagues[league()], a, b);
   const stats = withStats ? `${waitCell(a, b)}${spreadCell(a, b)}<td class="vol muted">${qty(v?.[0] ?? 0, a)} ⇄ ${qty(v?.[1] ?? 0, b)}</td>` : "";
-  const cell = (key, flip) => (kind ? shownCells(a, b, key, flip, kind, edit) : ratioCell(a, b, key, flip, withNoOrders));
+  const cell = (key, flip) => (kind ? shownCells(a, b, key, flip, kind, edit) : ratioCells(a, b, key, flip, scanTag(key)));
   return `<tr>${cell(rowKey(b, a), true)}${cell(rowKey(a, b), false)}${stats}</tr>`;
 };
 
@@ -437,7 +441,7 @@ const ratioTable = (groups, kind = null) => `<div class="scroll"><table class="r
     <span>${g.id // a currency's name opens its page in Available Trades; the hubs' block has none
       ? `<a href="#/item/${g.id}/available" title="Open in Available Trades">${icon(g.id)}${esc(g.title)}</a>`
       : esc(g.title)}</span>
-  </div></th></tr>${g.lines.map((line) => ratioLine(line, true, false, kind)).join("")}</tbody>`).join("")}
+  </div></th></tr>${g.lines.map((line) => ratioLine(line, true, kind)).join("")}</tbody>`).join("")}
 </table></div>`;
 
 // The hubs against each other (PoE1: Chaos ↔ Divine), then one block per item with a line per hub.
@@ -494,7 +498,7 @@ const perMinuteHtml = (r, bare = false) => {
   const x = perMinute(r, r.gain);
   if (x == null) return "—";
   const v = Math.round(x * 100) / 100 || 0;
-  return `${bare ? "" : icon(r.base)}${v > 0 ? "+" : ""}${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${bare ? "" : icon(r.base)}${v > 0 ? "+" : ""}${CENTS.format(v)}`;
 };
 
 function sortRows(rows) {
@@ -551,7 +555,7 @@ function summaryPage(mode) {
   sortRows(rows); // every table uses the chosen sort
 
   const row = ({ item, result, key, tag }) => {
-    const link = `<a href="#/item/${item.slug}/${mode}" data-pick-route="${item.id}|${result.route.id}">${titled(item.id)}</a>`;
+    const link = `<a href="#/item/${item.id}/${mode}" data-pick-route="${item.id}|${result.route.id}">${titled(item.id)}</a>`;
     // The route's scan age tag (its oldest price), in a narrow column of its own so the tags line up.
     const scanned = `<td class="age">${tag}</td>`;
     if (result.missing) {
@@ -623,9 +627,9 @@ const routeOrder = new Map();
 const routeFold = new Map();
 const routeOpen = new Set();
 
-function itemPage(slug, mode) {
+function itemPage(id, mode) {
   const { method, estimate = false } = MODES[mode];
-  const item = slug ? itemOf(slug) : null;
+  const item = id ? itemOf(id) : null;
   if (!item) return `<h1>Not found</h1><p><a href="${exchangeHref(mode)}">Back to Trade Recommendations</a></p>`;
   // The start currency isn't traded for itself (SPEC.md §4.2): pick another to start with.
   if (item.id === baseId()) {
@@ -679,7 +683,7 @@ function itemPage(slug, mode) {
   return `${startControls()}
     <p class="back"><a href="${exchangeHref(mode)}">← Back to Trade Recommendations</a></p>
     <h1>${titled(item.id)}${tradeTag(item.id, estimate)} <span class="muted item-volume">${volumeHtml(item.id)} traded last hour</span></h1>
-    ${modeTabs(mode, (m) => `#/item/${slug}/${m}`, item.id)}
+    ${modeTabs(mode, (m) => `#/item/${item.id}/${m}`, item.id)}
     ${results.length ? results.map(box).join("")
       : estimate && tradeKeys(item.id).every(isScanned) ? `<p class="muted">Every trade of ${esc(item.name)} is scanned: see Competitive and Instant Trading.</p>`
       : `<p class="muted">Not enough starting ${esc(hubName(baseId()))}</p>`}
@@ -692,6 +696,14 @@ function itemPage(slug, mode) {
 // page), in progress (posted in the game: kept as it was then, only its fill time following the scans) or done (filled:
 // kept as it was then). At most one is in progress.
 const listings = () => (store.state.listings ??= []);
+// The rows of every started listing step, by league: their orders as last read stay while they're started (store.dropOld).
+function startedRows() {
+  const rows = {};
+  for (const l of listings()) {
+    for (const st of l.steps) if (st.state === "progress") (rows[l.league] ??= new Set()).add(rowKey(st.fixed.recv, st.fixed.give));
+  }
+  return rows;
+}
 const leagueListings = (completed) => listings().filter((l) => l.league === league() && !!l.completed === completed);
 const listingOf = (id) => listings().find((l) => l.id === id);
 let pendingDelete = null; // the listing whose Delete asks first
@@ -733,7 +745,6 @@ const postedAt = (l, i) => {
 // itself; orders at one price fill oldest first) as far as the stock there now, less the order (unless that list was read
 // before it was started), still holds it. Its price off the list (worse than the 5 shown): everything shown. Null without
 // a list read.
-const better = (a, b) => a[0] * b[1] < b[0] * a[1];
 function aheadOfPosted(st) {
   const f = st.fixed, list = store.listOf(league(), rowKey(f.recv, f.give));
   if (!list?.levels.length) return null;
@@ -745,10 +756,10 @@ function aheadOfPosted(st) {
 }
 // A started step stays as it was when it was started (ratio, Have, Want, gold, how it's traded); only its fill time follows
 // the scans, worked out at its ratio from what's ahead of it, counting down from the pair's latest scan (or from when it
-// was posted, if later).
-function startedFill(l, i) {
+// was posted, if later). `now`: ratios().
+function startedFill(l, i, now) {
   const st = l.steps[i], f = st.fixed, queued = f.method === FAST ? null : aheadOfPosted(st);
-  const t = leg(ratios(), f.method, f.recv, f.give, f.given, f.ratio, queued);
+  const t = leg(now, f.method, f.recv, f.give, f.given, f.ratio, queued);
   if (t.missing) return null;
   const from = Math.max(ratioOf(stepRow(f))?.verifiedAt ?? 0, postedAt(l, i)), h = t.fillHours;
   return h == null || h === 0 ? h : Math.max(h - (Date.now() - from) / 3600000, 1 / 120);
@@ -758,18 +769,18 @@ function startedFill(l, i) {
 // several rows trades what they all do together (the next one has what they all bought). `rows` is each row's trade,
 // for its line in the steps table.
 function listingResult(l) {
-  const keys = pathKeys(l);
+  const keys = pathKeys(l), now = ratios();
   const perStep = Object.fromEntries(keys.map((k, i) => [k, l.methods[i]]));
   const kept = (f, hours) => ({ ...f, noOrders: false, thin: false, depth: null, undercut: null, bought: null, ahead: 0, fillHours: hours });
   const path = pathOf(l);
   // A repost waiting to start trades what was left at the latest price.
   const reposted = (st, i) => {
-    const k = legOf(l, i), now = ratios();
+    const k = legOf(l, i);
     let method = methodOf(l, i), t = leg(now, method, path[k + 1], path[k], st.left);
     if (t.missing) [t, method] = [leg(now, ESTIMATE, path[k + 1], path[k], st.left), ESTIMATE];
     return t.missing ? t : { ...t, method };
   };
-  const rows = l.steps.map((st, i) => (st.state === "done" ? kept(st.fixed, 0) : st.state === "progress" ? kept(st.fixed, startedFill(l, i))
+  const rows = l.steps.map((st, i) => (st.state === "done" ? kept(st.fixed, 0) : st.state === "progress" ? kept(st.fixed, startedFill(l, i, now))
     : st.repost ? reposted(st, i) : undefined));
   const missing = rows.find((t) => t?.missing);
   if (missing) return { missing: missing.missing };
@@ -783,7 +794,7 @@ function listingResult(l) {
   // A started or done step's extra is what the step before it bought and it didn't spend, as for any step (§3.3).
   for (const [i, f] of fixed.entries()) if (i > 0 && f && fixed[i - 1]) fixed[i] = { ...f, extra: fixed[i - 1].received - f.given };
   // A waiting step with no price scanned is an Estimate step, whatever Type it was given (SPEC.md §4.6).
-  const r = runRoute(ratios(), l.item, routeOf(l), MODES[l.mode].method, l.start, perStep, l.base, fixed, true);
+  const r = runRoute(now, l.item, routeOf(l), MODES[l.mode].method, l.start, perStep, l.base, fixed, true);
   if (r.missing) return r;
   // Each row's own line: a route step's trade as worked out, or with several rows, each row's part of it.
   const lines = l.steps.map((st, i) => {
@@ -1049,13 +1060,6 @@ function addListing(item, mode, routeId) {
   store.save();
 }
 
-// Two tabs: Modified (`#/page`, the default; `#/page/modified` works too) and All
-// (`#/page/all`).
-const tabs = (page, modified, onlyModified) => {
-  const tab = (href, text, active) => `<a href="${href}" class="${active ? "active" : ""}">${text}</a>`;
-  return `<div class="tabs">${tab(`#/${page}`, `Modified (${modified})`, onlyModified)}${tab(`#/${page}/all`, "All", !onlyModified)}</div>`;
-};
-
 // Market Ratios (SPEC.md §4.3): three tabs, each the currencies with a price of its kind, with search and paging, each
 // showing every line of a currency (vs Chaos and vs Divine) even if only one is of that kind: Scanned (#/market-ratios,
 // scanned in the last 4 hours), Estimated (/estimated: every currency with an estimate, at it) and Manual (/manual: a
@@ -1118,8 +1122,9 @@ function volumesPage() {
   const total = (id) => hubs.reduce((sum, h) => sum + (h === id ? 0 : pairVolume(lg, id, h)?.[0] ?? 0), 0);
   const paid = (id, h) => (h === id ? null : pairVolume(lg, id, h)?.[1] ?? 0);
   const value = (id, key) => (key === "name" ? null : key === "total" ? total(id) : paid(id, key) ?? -1);
-  const dir = volumeSort.desc ? -1 : 1;
-  ids.sort((x, y) => dir * (volumeSort.key === "name" ? nameOf(x).localeCompare(nameOf(y)) : value(x, volumeSort.key) - value(y, volumeSort.key)));
+  const dir = volumeSort.desc ? -1 : 1, key = volumeSort.key;
+  const by = new Map(ids.map((id) => [id, key === "name" ? nameOf(id) : value(id, key)]));
+  ids.sort((x, y) => dir * (key === "name" ? by.get(x).localeCompare(by.get(y)) : by.get(x) - by.get(y)));
   const header = (key, label) => {
     const arrow = volumeSort.key === key ? (volumeSort.desc ? " ▼" : " ▲") : "";
     return `<th${key === "name" ? "" : ' class="num"'}><button class="sort${volumeSort.key === key ? " active" : ""}" data-volume-sort="${key}">${label}${arrow}</button></th>`;
@@ -1137,7 +1142,7 @@ function volumesPage() {
     ${pager(ids.length)}
     ${ids.length ? `<div class="scroll"><table class="volumes">
       <thead><tr>${header("name", "Currency")}${header("total", "Currency / hr")}${hubs.map((h) => `${header(h, `${iconOnly(h)} / hr`)}<th class="age"></th>`).join("")}</tr></thead>
-      <tbody>${paged(ids).map((id) => `<tr><td><a href="#/item/${itemOf(id).slug}/available">${icon(id)}${esc(nameOf(id))}</a></td>
+      <tbody>${paged(ids).map((id) => `<tr><td><a href="#/item/${id}/available">${icon(id)}${esc(nameOf(id))}</a></td>
         ${cell(total(id), id)}${hubs.map((h) => cell(paid(id, h)) + ageCell(id, h)).join("")}</tr>`).join("")}</tbody>
     </table></div>` : `<p class="muted">No matches.</p>`}
     ${pager(ids.length)}`;
@@ -1175,7 +1180,7 @@ function render() {
     loadData().then(render, () => { main.innerHTML = `<p class="load-error" role="alert">${ERROR_ICON}<span>Couldn't load rates. Try reloading the page.</span></p>`; });
     return;
   }
-  if (rates) store.dropOld(league(), Date.now() - store.SCAN_FOR); // scans in use only (SPEC.md §5)
+  if (rates) store.dropOld(Date.now(), startedRows()); // scans in use only (SPEC.md §5), and only what's still used (§7)
   const content = home ? $(`#home-${game.id}`).innerHTML
     : page === "item" ? itemPage(decodeURIComponent(arg ?? ""), mode)
     : page === "my-listings" ? listingsPage(arg === "completed")
@@ -1268,7 +1273,7 @@ function ratioDialog() {
   const block = ([a, b]) => `<tbody class="dialog-pair">
     <tr class="group"><th colspan="12"><div class="dialog-title"><span>${full(a)} ↔ ${full(b)}</span></div></th></tr>
     <tr class="cols"><th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th></tr>
-    ${ratioLine([a, b], false, true, "manual", true)}
+    ${ratioLine([a, b], false, "manual", true)}
   </tbody>`;
   return `<dialog id="ratio-dialog">
     <button id="dialog-close" class="close" aria-label="Close" title="Close">×</button>
@@ -1339,7 +1344,7 @@ function liveFills([want, have], found) {
 function farOff([a, b], found) {
   const r = (found.available ?? found.competing)[0];
   const price = r.have.value / r.want.value; // per unit wanted
-  const cur = store.ratioValues(league())[rowKey(a, b)];
+  const cur = store.leagueState(league()).ratios[rowKey(a, b)]?.value;
   const avg = pairPrices(rates.leagues[league()], a, b); // b per a
   const refs = avg.length ? avg : cur ? [cur[1] / cur[0]] : [];
   return refs.length > 0 && refs.every((ref) => Math.abs(Math.log(price / ref)) > Math.log(3));
@@ -1687,6 +1692,7 @@ function useRead(pair, found) {
   const [want, have] = pair;
   const none = found.empty === "available" ? rowKey(have, want) : found.empty === "competing" ? rowKey(want, have) : null;
   if (none && !(found.empty === "competing" && ratioOf(none)?.value)) store.setEmpty(league(), none);
+  store.save();
   resortOnClose = true; // the routes behind re-sort when the dialog closes
   markNext = true;
 }
@@ -1727,6 +1733,7 @@ function paceOf(name, x, other) {
 function selectLeague(name) {
   store.state.league = name;
   store.save();
+  routeOrder.clear(); // other prices: the item page's routes re-sort
   setNoOrders(rates.leagues[name]?.noOrders);
   setPerHour((x, other) => paceOf(name, x, other));
   setStock((offered, other) => stockOn(rates.leagues[name], offered, other));
@@ -1758,7 +1765,7 @@ function listFor(name, key) {
   const value = store.leagueState(name).ratios[key]?.value;
   if (!value) return null;
   const [best] = list.levels;
-  return best.ratio[0] === value[0] && best.ratio[1] === value[1] ? list : null;
+  return sameRatio(best.ratio, value) ? list : null;
 }
 // An Instant step's order book: the levels, then the "worse than" row's stock counted at the last price.
 function bookFor(name, key) {
@@ -2131,8 +2138,8 @@ window.addEventListener("hashchange", (e) => {
   routeOpen.clear();
   routeFold.clear();
   // A picked route lasts while on its item's page (either mode).
-  const [, page, slug] = new URL(e.newURL).hash.split("/");
-  if (page !== "item" || itemOf(decodeURIComponent(slug ?? ""))?.id !== pickedRoute.item) pickedRoute = {};
+  const [, page, id] = new URL(e.newURL).hash.split("/");
+  if (page !== "item" || decodeURIComponent(id ?? "") !== pickedRoute.item) pickedRoute = {};
   // The search box survives switching tabs on the same page (Trade Recommendations: the trading modes); any other move clears it. The list changes either way, so it's back to page 1.
   const pageOf = (url) => new URL(url).hash.split("/")[1];
   if (!["trade-recommendations", "trade-volumes", "market-ratios"].includes(pageOf(e.newURL)) || pageOf(e.oldURL) !== pageOf(e.newURL)) query = "";

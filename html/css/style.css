@@ -224,7 +224,6 @@ tr.losing { opacity: 0.5; }
 .tag.manual { background: var(--line); color: inherit; text-decoration: none; }
 a.tag.manual:hover { background: var(--accent); color: var(--panel); }
 .tag.verified { background: var(--pos); color: var(--panel); text-decoration: none; font-weight: 600; }
-a.tag.verified:hover { opacity: 0.85; }
 /* A price that isn't scanned, at its estimate: muted and outlined, unlike a scan's filled tag. */
 /* In an Estimate listing step's buttons' place. */
 .estimate-note { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
