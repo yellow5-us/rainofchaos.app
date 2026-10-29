@@ -1067,6 +1067,12 @@ export const CHECKS = {
       ["hubs", 5, true, true, false], "Estimated: Chaos ↔ Divine first, every currency with an estimate, scanned or not (not Sulphur, no recent trades)");
     t.eq($$(`#main tbody[data-row='${CHROM}'] tr:not(.group) td.r-tags`).map((td) => td.textContent.trim()).slice(0, 2), ["estimated", "estimated"],
       "a scanned currency shows its estimated prices here");
+    // Last hour in the fixture, in Divine at 375 : 1 (375,000 Chaos for 1,000 Divine): Chromatic 70,000c + 1,250 div (1,437),
+    // Alchemy 12,000c + 100 div (132), Vivid 3,600c + 18 div (28), Orb of Fusing 6,000c (16).
+    t.eq(listed, ["hubs", CHROM, ALCH, VIVID, "CurrencyRerollSocketLinks"], "after Chaos ↔ Divine, the most traded first, in Divine");
+    const lines = (id) => $$(`#main tbody[data-row='${id}'] tr:not(.group)`).length;
+    t.eq(lines("CurrencyRerollSocketLinks"), 1, "Orb of Fusing: only its Chaos line, the Divine one has no estimate");
+    t.ok(!$$("#main td.r-none").length, "no line without an estimated price");
     const est = $$("#main table.ratios tbody[data-row='CurrencyRerollSocketLinks'] tr:not(.group) td.r-tags").map((td) => td.textContent.trim());
     t.eq(est.slice(0, 2), ["estimated", "estimated"], "its Chaos line at the estimated price, both ways");
     t.ok(!$("#main table.ratios .manual-edit, #main table.ratios input"), "nothing to edit");
