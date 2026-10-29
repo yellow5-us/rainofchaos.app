@@ -225,8 +225,10 @@ tr.losing { opacity: 0.5; }
 a.tag.manual:hover { background: var(--accent); color: var(--panel); }
 .tag.verified { background: var(--pos); color: var(--panel); text-decoration: none; font-weight: 600; }
 a.tag.verified:hover { opacity: 0.85; }
+/* A price that isn't scanned, at its estimate: muted and outlined, unlike a scan's filled tag. */
+.tag.estimate { color: var(--muted); border: 1px solid color-mix(in srgb, var(--muted) 45%, transparent); }
 /* After a currency's name (an item page's heading): a little room from the name. */
-h1 > .tag.verified, h1 > .tag.manual { margin-left: 0.3rem; }
+h1 > .tag.verified, h1 > .tag.estimate { margin-left: 0.3rem; }
 button.reset { padding: 0.1rem 0.5rem; font-size: 0.85rem; }
 .tag.warn { background: var(--warn-bg); }
 
@@ -386,7 +388,7 @@ select.method { padding: 0.1rem 0.3rem; font-size: 0.9rem; }
 .manual-ratio .reset { margin-left: 0.5rem; }
 #manual-ratio { width: 4.5rem; font: inherit; font-variant-numeric: tabular-nums; padding: 0 0.3rem; }
 button:disabled { opacity: 0.45; cursor: default; }
-/* Tabs under a page heading, e.g. Imported Ratios: Verified | Expired. */
+/* Tabs under a page heading, e.g. My Listings: Active | Completed. */
 .tabs { display: flex; border-bottom: 1px solid var(--line); margin: 0.5rem 0 1rem; }
 .tabs a { padding: 0.4rem 1rem; margin-bottom: -1px; border: 1px solid transparent; border-bottom: 0;
   border-radius: 6px 6px 0 0; color: var(--muted); text-decoration: none; }

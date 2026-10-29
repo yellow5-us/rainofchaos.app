@@ -1,6 +1,6 @@
 // Runs in the browser (tests/index.html) or headless with macOS's JavaScriptCore:
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc -m tests/calc.test.js
-import { allResults, leg, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
+import { allResults, ESTIMATE, estimateRatio, leg, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
 import { CHAOS, DIVINE, EXALTED, rowKey, setCurrencies, setGold } from "../html/js/items.js";
 import { boughtRate, undercutRate } from "../html/js/undercut.js";
 
@@ -399,6 +399,27 @@ eq(hubBack.map((x) => [x.route.id, x.route.path(DIVINE), x.unspent, x.gain]), [[
   eq(sum(fill(levels([3500.5, 1e6]), 3)), [10501, 3, [3500.5, 1], 2, false, 0], "book: what's left after whole lots tops up at that price");
   eq(sum(fill(levels([3500.5, 7001]), 3)), [7001, 2, [3500.5, 1], 1, false, 1], "book: no top-up past the stock on offer");
   eq(fill(book, 5, SLOW).book ?? false, false, "Competing Trades don't use the book");
+}
+
+// --- Estimate steps (SPEC.md §3.2c): a pair with no scan at its latest hour's average ---
+{
+  // Chromatic traded 3.97 Chaos each and 61.22 to the Divine lately; nothing about Chaos ↔ Divine.
+  setEstimate((recv, give) => ({ [`${CHROM}>${CHAOS}`]: 1 / 3.97, [`${CHAOS}>${CHROM}`]: 3.97,
+    [`${CHROM}>${DIVINE}`]: 61.22, [`${DIVINE}>${CHROM}`]: 1 / 61.22 })[`${recv}>${give}`] ?? null);
+  eq(estimateRatio(CHROM, CHAOS), [1, 3.97], "estimate: as the game shows it, the smaller side 1");
+  eq(estimateRatio(CHAOS, DIVINE), null, "estimate: none without recent trades");
+  const t = leg({}, ESTIMATE, CHROM, CHAOS, 1000);
+  eq([t.ratio, t.received, t.given, t.ahead], [[1, 3.97], 252, 1000, 0], "estimate step: posted at the estimate, nothing ahead");
+  const only = { [rowKey(CHAOS, DIVINE)]: [380, 1], [rowKey(DIVINE, CHAOS)]: [1, 370] };
+  const route = ROUTES.find((x) => x.id === `before:${CHAOS}`); // Div → Chaos → Chromatic → Div
+  const est = runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true);
+  eq(est.steps.map((x) => x.method), [SLOW, ESTIMATE, ESTIMATE], "estimating: scanned steps keep their Type, the rest are Estimate");
+  eq(runRoute(only, CHROM, route, SLOW, 25).missing, rowKey(CHROM, CHAOS), "not estimating: the missing price stops the route");
+  eq(runRoute(only, CHROM, route, SLOW, 25, { [stepKey(CHAOS, DIVINE)]: FAST }, DIVINE, [], true).steps[0].method, FAST,
+    "estimating: a scanned step can be Instant");
+  setEstimate(null);
+  eq(runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true).estimate && runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true).missing,
+    rowKey(CHROM, CHAOS), "estimating with no estimate: missing, marked as an estimate's");
 }
 
 log(failed ? `\n${failed} FAILED` : "\nall passed");

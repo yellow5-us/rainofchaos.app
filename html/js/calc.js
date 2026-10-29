@@ -29,7 +29,9 @@ export const SLOW = "slow";
 export const FAST = "fast";
 // Manual: post your own order at a price typed in (its `ratio`, want:have), which scans don't change.
 export const MANUAL = "manual";
-// Slow and Manual post orders (row recv:give); Fast fills them (row give:recv).
+// Estimate: post your own order at the pair's estimate (estimateOf), for a pair with no scan.
+export const ESTIMATE = "estimate";
+// Slow, Manual and Estimate post orders (row recv:give); Fast fills them (row give:recv).
 export const posts = (method) => method !== FAST;
 // The row a step reads: receiving `recv` for `give` by `method`.
 export const rowOf = (method, recv, give) => (posts(method) ? rowKey(recv, give) : rowKey(give, recv));
@@ -98,15 +100,28 @@ let usualOf = () => null;
 export function setUsual(fn) {
   usualOf = fn ?? (() => null);
 }
-// A step posting the only order (nobody else posting) asks the pair's usual price, as the game shows a ratio (two
-// decimals); `instant` when the orders on the other side already pay that or more: posting there fills them at once.
+// `per` of recv for each give as the game shows a ratio recv:give: two decimals, the smaller side 1.
+const shown = (per) => (per >= 1 ? [roundHalfUp(per, 2), 1] : [1, roundHalfUp(1 / per, 2)]);
+// A step posting the only order (nobody else posting) asks the pair's usual price; `instant` when the orders on the other
+// side already pay that or more: posting there fills them at once.
 function aloneRatio(ratios, recv, give) {
   const per = usualOf(recv, give);
   if (!(per > 0)) return null;
   const buyers = ratios[rowKey(give, recv)]; // what they want (give) : what they offer (recv)
   if (buyers && buyers[1] / buyers[0] >= per) return { instant: true };
-  return { ratio: per >= 1 ? [roundHalfUp(per, 2), 1] : [1, roundHalfUp(1 / per, 2)] };
+  return { ratio: shown(per) };
 }
+// estimateOf(recv, give): how much of `recv` the pair traded for each `give` in its latest hour, when that was recent
+// (null otherwise): an Estimate step's price, as the game would show it.
+let estimateOf = () => null;
+export function setEstimate(fn) {
+  estimateOf = fn ?? (() => null);
+}
+// The estimate as a row recv:give (want:have), or null.
+export const estimateRatio = (recv, give) => {
+  const per = estimateOf(recv, give);
+  return per > 0 ? shown(per) : null;
+};
 
 // Gold for a set of orders receiving `recv`, rounded up per order; null when the fee isn't known.
 export function goldCost(recv, orders) {
@@ -249,15 +264,16 @@ function bookLeg(book, recv, give, have) {
 // that price instead (a listing's step in progress, posted at it): no order book, no place in the Competing list.
 // `queued`, when given, is the stock ahead of a Competing order in what it gives, in place of the row's stock at its best
 // price (a posted order's place, which the caller knows). A Manual step is pinned at its typed price, with the row's stock
-// ahead of it only when that's the price read.
+// ahead of it only when that's the price read. An Estimate step is priced at the pair's estimate, with nothing ahead of it.
 export function leg(ratios, method, recv, give, have, pinned = null, queued = null) {
   const key = rowOf(method, recv, give);
   const read = ratios[key];
   if (pinned) ratios = { [key]: posts(method) ? pinned : [pinned[1], pinned[0]] };
+  else if (method === ESTIMATE) ratios = { [key]: estimateRatio(recv, give) };
   let row = ratios[key];
   // Nobody else posting (the game showed no Competing trades, or the latest hour had none): the order is the only one,
   // at the pair's usual price, or it fills the other side's orders when they already pay that.
-  const alone = posts(method) && !pinned && !row && (readEmpty(key) || noOrders.has(key));
+  const alone = posts(method) && method !== ESTIMATE && !pinned && !row && (readEmpty(key) || noOrders.has(key));
   if (alone) {
     const a = aloneRatio(ratios, recv, give);
     if (!a) return { missing: key };
@@ -293,7 +309,7 @@ export function leg(ratios, method, recv, give, have, pinned = null, queued = nu
   const depth = alone ? null : method === FAST ? stockOf(recv, give) : stockOf(give, recv);
   const pace = given ? paceAt(received / given) : perHour(recv, give);
   const ahead = !posts(method) ? 0
-    : queued ?? (method === MANUAL && !(read && sameRatio(read, row)) ? 0 : aheadOf(key)) ?? 0;
+    : queued ?? (method === ESTIMATE || (method === MANUAL && !(read && sameRatio(read, row))) ? 0 : aheadOf(key)) ?? 0;
   const size = method === FAST ? received : given;
   return {
     noOrders: noOrders.has(key) && !posts(method),
@@ -337,19 +353,24 @@ export function routesFor(base) {
 // Full round trip (SPEC.md §3.3–3.4): the trades, and what's left over along the way, kept as it is.
 // `perStep` overrides the method for individual steps, keyed by stepKey(recv, give): a method, or a Manual step's
 // { method: MANUAL, ratio }. `fixed[i]`, when given, is step i as
-// it was posted (a listing's step in progress or done, SPEC.md §4.6), used in place of the live one.
+// it was posted (a listing's step in progress or done, SPEC.md §4.6), used in place of the live one. With `estimate`, a
+// step with no price scanned is an Estimate step instead (SPEC.md §3.2c), and so is valuing what's left over.
 export const stepKey = (recv, give) => `${recv}>${give}`;
 
-export function runRoute(ratios, item, route, method, start, perStep = {}, base = DIVINE, fixed = []) {
+export function runRoute(ratios, item, route, method, start, perStep = {}, base = DIVINE, fixed = [], estimate = false) {
   const { hubs, end, sellTo } = currencies;
-  const missing = (key) => ({ route, method, base, missing: key });
+  const missing = (key) => ({ route, method, base, missing: key, estimate });
   const steps = [];
   const left = new Map(); // currency other than the base -> how much of it is left over, kept
   let have = start, cur = base, kept = 0; // kept: the base left over partway
   for (const recv of route.path(item)) {
     const o = perStep[stepKey(recv, cur)];
-    const m = fixed[steps.length]?.method ?? o?.method ?? o ?? method;
-    const t = fixed[steps.length] ?? leg(ratios, m, recv, cur, have, o?.ratio);
+    let m = fixed[steps.length]?.method ?? o?.method ?? o ?? method;
+    let t = fixed[steps.length] ?? leg(ratios, m, recv, cur, have, o?.ratio);
+    if (t.missing && estimate) {
+      m = ESTIMATE;
+      t = leg(ratios, m, recv, cur, have);
+    }
     if (t.missing) return missing(t.missing);
     // The first trade's extra is simply unspent.
     if (steps.length && t.extra > 0) {
@@ -367,7 +388,9 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
   // Units of `give` per unit of `recv` at the row's ratio, or the row's key when it has none.
   const rate = (recv, give) => {
     const key = rowOf(method, recv, give), l = ratios[key] && lot(ratios[key]);
-    return !l ? { missing: key } : { per: posts(method) ? l[1] / l[0] : l[0] / l[1] };
+    if (l) return { per: posts(method) ? l[1] / l[0] : l[0] / l[1] };
+    const e = estimate && estimateRatio(recv, give), el = e && lot(e); // an estimate's row is recv:give
+    return el ? { per: el[1] / el[0] } : { missing: key };
   };
   const perBase = {}; // hub -> units per base
   for (const h of hubs) {
@@ -383,7 +406,8 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
       worth += inBase(id, n);
       continue;
     }
-    const s = leg(ratios, method, sellTo, id, n);
+    let s = leg(ratios, method, sellTo, id, n);
+    if (s.missing && estimate) s = leg(ratios, ESTIMATE, sellTo, id, n);
     if (s.missing && readEmpty(s.missing)) continue; // nobody to sell it to: worth nothing
     if (s.missing) return missing(s.missing);
     worth += inBase(sellTo, s.received);
@@ -419,12 +443,13 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
 }
 
 // One result per route, best first; routes with missing ratios sort last. Every route uses `method`, except steps
-// overridden in perStepByRoute[routeId].
-export function allResults(ratios, item, start, method, perStepByRoute = {}, base = DIVINE) {
+// overridden in perStepByRoute[routeId], and with `estimate`, steps with no price scanned (runRoute).
+export function allResults(ratios, item, start, method, perStepByRoute = {}, base = DIVINE, estimate = false) {
   // No step trades a currency for itself (SPEC.md §3.1), e.g. Div → Chaos → Chaos → Div when the item is Chaos.
   const routes = routesFor(base).filter((r) => [base, ...r.path(item)].every((x, i, p) => x !== p[i - 1]));
   // A route the starting amount can't afford isn't offered at all (SPEC.md §4.2).
-  const results = routes.map((r) => runRoute(ratios, item, r, method, start, perStepByRoute[r.id], base)).filter((r) => !r.unaffordable);
+  const results = routes.map((r) => runRoute(ratios, item, r, method, start, perStepByRoute[r.id], base, [], estimate))
+    .filter((r) => !r.unaffordable);
   const sortRank = (r) => (r.missing || r.blocked ? -Infinity : r.rank);
   return results.sort((x, y) => (x.missing ? 1 : 0) - (y.missing ? 1 : 0) || sortRank(y) - sortRank(x));
 }

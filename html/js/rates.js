@@ -51,6 +51,14 @@ export function pairVolume(league, a, b) {
   return pair ? [volumeOf(pair, a), volumeOf(pair, b)] : null;
 }
 
+// Units of `b` per unit of `a` the pair traded at in its latest hour, when that hour started at `since` or later (SPEC.md
+// §3.2c), else null.
+export function latestPrice(league, a, b, since) {
+  const pair = pairOf(league, a, b);
+  if (!pair || pair.hour < since || !(volumeOf(pair, a) > 0 && volumeOf(pair, b) > 0)) return null;
+  return volumeOf(pair, b) / volumeOf(pair, a);
+}
+
 // Units of `b` per unit of `a` the pair usually trades at: over its recent hours, else its last days, else its latest hour
 // (null when it hasn't traded).
 export function usualPrice(league, a, b) {
