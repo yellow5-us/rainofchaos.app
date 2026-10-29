@@ -1346,8 +1346,8 @@ export const CHECKS = {
     t.ok(sell && !$(".tag.warn", sell), "selling it posts the only order, at the pair's usual price (0.12 Chaos a Vivid), with nothing wrong",
       text($("table.steps", direct)));
     t.ok(!/no competing trades/.test(text(direct)), "and no tag saying nobody else is posting");
-    await go("#/market-ratios");
-    t.eq($$("#main td.r-none").map(text), ["no trades"], "Market Ratios shows the box as no trades");
+    await go("#/market-ratios/available");
+    t.eq($$("#main td.r-none").map(text), ["no trades"], "Market Ratios' Instant tab shows the box as no trades");
   } },
 
   // One list read: Available alone with no banners (no Competing trades), or Competing moved up under the game's "no
