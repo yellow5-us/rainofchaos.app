@@ -1,6 +1,6 @@
 // Runs in the browser (tests/index.html) or headless with macOS's JavaScriptCore:
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc -m tests/calc.test.js
-import { allResults, leg, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
+import { allResults, ESTIMATE, estimateRatio, leg, priceSource, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
 import { CHAOS, DIVINE, EXALTED, rowKey, setCurrencies, setGold } from "../html/js/items.js";
 import { boughtRate, undercutRate } from "../html/js/undercut.js";
 
@@ -218,12 +218,18 @@ eq([queued.steps[0].ahead, queued.steps[0].fillHours.toFixed(2), queued.fillHour
   "Competing: the stock posted ahead at the price fills first");
 eq(runRoute(ratios, CHROM, ROUTES[1], FAST, 25, { [stepKey(CHAOS, DIVINE)]: SLOW }).steps[0].fillHours.toFixed(2), "0.20",
   "a Competing step in an Instant route queues too");
-// A Manual step trades at its typed price: 390 : 1 is 9,750 chaos for 25 div, with nothing counted ahead (the 25 div queued
-// are at the read price, 380 : 1); typed at the read price, it queues behind them as Competitive does.
-const manual = (ratio) => runRoute(ratios, CHROM, ROUTES[1], FAST, 25, { [stepKey(CHAOS, DIVINE)]: { method: MANUAL, ratio } }).steps[0];
+// A Manual step trades at its row's Manual price: 390 : 1 is 9,750 chaos for 25 div, with nothing counted ahead (the 25 div
+// queued are at the read price, 380 : 1); at the read price, it queues behind them as Competitive does.
+const manual = (ratio) => {
+  setManual((key) => (key === rowKey(CHAOS, DIVINE) ? ratio : null));
+  const step = runRoute(ratios, CHROM, ROUTES[1], FAST, 25, { [stepKey(CHAOS, DIVINE)]: MANUAL }).steps[0];
+  setManual(null);
+  return step;
+};
 eq([manual([390, 1]).method, manual([390, 1]).ratio, manual([390, 1]).received, manual([390, 1]).ahead], [MANUAL, [390, 1], 9750, 0],
   "Manual: at its typed price, nothing ahead");
 eq(manual([380, 1]).ahead, 25, "Manual at the read price: behind the stock there");
+eq(manual(null).ratio, [380, 1], "Manual with no Manual price yet: the Competing price scanned");
 // Undercutting (SPEC.md §3.6): orders posted ahead after yours slow the queue's drain. The queued step above (9,500
 // chaos and 9,500 of queue at 95,000 an hour, 0.2 h) with 125 div an hour posted ahead (47,500 chaos at 380 : 1)
 // drains at 47,500: 0.4 h. Undercut faster than it trades, it still drains at half the pace: 0.4 h.
@@ -399,6 +405,33 @@ eq(hubBack.map((x) => [x.route.id, x.route.path(DIVINE), x.unspent, x.gain]), [[
   eq(sum(fill(levels([3500.5, 1e6]), 3)), [10501, 3, [3500.5, 1], 2, false, 0], "book: what's left after whole lots tops up at that price");
   eq(sum(fill(levels([3500.5, 7001]), 3)), [7001, 2, [3500.5, 1], 1, false, 1], "book: no top-up past the stock on offer");
   eq(fill(book, 5, SLOW).book ?? false, false, "Competing Trades don't use the book");
+}
+
+// --- Estimate steps (SPEC.md §3.2c): a pair with no scan at its latest hour's average ---
+{
+  // Chromatic traded 3.97 Chaos each and 61.22 to the Divine lately; nothing about Chaos ↔ Divine.
+  setEstimate((recv, give) => ({ [`${CHROM}>${CHAOS}`]: 1 / 3.97, [`${CHAOS}>${CHROM}`]: 3.97,
+    [`${CHROM}>${DIVINE}`]: 61.22, [`${DIVINE}>${CHROM}`]: 1 / 61.22 })[`${recv}>${give}`] ?? null);
+  eq(estimateRatio(CHROM, CHAOS), [1, 3.97], "estimate: as the game shows it, the smaller side 1");
+  eq(estimateRatio(CHAOS, DIVINE), null, "estimate: none without recent trades");
+  const t = leg({}, ESTIMATE, CHROM, CHAOS, 1000);
+  eq([t.ratio, t.received, t.given, t.ahead], [[1, 3.97], 252, 1000, 0], "estimate step: posted at the estimate, nothing ahead");
+  const only = { [rowKey(CHAOS, DIVINE)]: [380, 1], [rowKey(DIVINE, CHAOS)]: [1, 370] };
+  const route = ROUTES.find((x) => x.id === `before:${CHAOS}`); // Div → Chaos → Chromatic → Div
+  const est = runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true);
+  eq(est.steps.map((x) => x.method), [SLOW, ESTIMATE, ESTIMATE], "estimating: scanned steps keep their Type, the rest are Estimate");
+  eq(runRoute(only, CHROM, route, SLOW, 25).missing, rowKey(CHROM, CHAOS), "not estimating: the missing price stops the route");
+  eq(runRoute(only, CHROM, route, SLOW, 25, { [stepKey(CHAOS, DIVINE)]: FAST }, DIVINE, [], true).steps[0].method, FAST,
+    "estimating: a scanned step can be Instant");
+  // Where a price comes from: Manual, else the scan, else the estimate ("estimated" skips Manual).
+  setManual((key) => (key === rowKey(CHROM, CHAOS) ? [1, 3.6] : null));
+  eq(priceSource(only, "manual", CHROM, CHAOS), { value: [1, 3.6], from: "manual" }, "price: the Manual one first");
+  eq(priceSource(only, "estimated", CHROM, CHAOS), { value: [1, 3.97], from: "estimate" }, "price: estimated skips Manual");
+  eq(priceSource(only, "manual", CHAOS, DIVINE), { value: [380, 1], from: "scan" }, "price: the scan before the estimate");
+  setManual(null);
+  setEstimate(null);
+  eq(runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true).estimate && runRoute(only, CHROM, route, SLOW, 25, {}, DIVINE, [], true).missing,
+    rowKey(CHROM, CHAOS), "estimating with no estimate: missing, marked as an estimate's");
 }
 
 log(failed ? `\n${failed} FAILED` : "\nall passed");

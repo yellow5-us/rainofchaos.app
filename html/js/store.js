@@ -37,8 +37,9 @@ export function save() {
 
 // A league's prices, `ratios: { [rowKey]: { value:[l,r], digits:[l,r], stock, verifiedAt } }` (or `{ value: null, empty,
 // verifiedAt }`): only prices read from the game (scans, SPEC.md §2), each with the stock on offer at it (in what row
-// l>r's orders offer, r) and when it was read (ms); a scan is verified for an hour, then expired (app.js). Also each row's
+// l>r's orders offer, r) and when it was read (ms); a scan is used for SCAN_FOR, then dropped (dropOld). Also each row's
 // orders as last read (`lists`) and its reads of the last hour (`reads`), below.
+export const SCAN_FOR = 4 * 60 * 60 * 1000;
 export function leagueState(name) {
   return (state.leagues[name] ??= { ratios: {} });
 }
@@ -50,23 +51,24 @@ export function ratioValues(name) {
   return out;
 }
 
-// Imported Ratios' Clear All: every price in the league read before `before`, with its row's orders and reads (the read history
-// stays).
-export const expiredCount = (name, before) => Object.values(leagueState(name).ratios).filter((r) => r.verifiedAt < before).length;
-export function removeExpired(name, before) {
-  const ls = leagueState(name);
-  for (const [key, r] of Object.entries(ls.ratios)) {
-    if (r.verifiedAt >= before) continue;
-    delete ls.ratios[key];
-    delete ls.lists?.[key];
-    delete ls.reads?.[key];
-  }
+// Forgets the league's prices read before `before` (their rows' orders and reads stay, for listings and the read history).
+export function dropOld(name, before) {
+  const ratios = leagueState(name).ratios;
+  const old = Object.keys(ratios).filter((key) => ratios[key].verifiedAt < before);
+  for (const key of old) delete ratios[key];
+  if (old.length) save();
+}
+
+// Manual prices (SPEC.md §3.2b), typed in, one per row: `manual: { [rowKey]: { value: [l, r], at } }`, kept until changed.
+export const manualOf = (name, key) => leagueState(name).manual?.[key] ?? null;
+export function setManual(name, key, value) {
+  (leagueState(name).manual ??= {})[key] = { value, at: Date.now() };
   save();
 }
 
 // A row's orders as last read from the game (SPEC.md §3.2a), from whichever list showed them (a pair's Available Trades
 // are the reverse pair's Competing Trades): every price with its stock (`levels`), the "worse than" row's stock (`rest`,
-// or null) and when it was read. Hidden from the user; used for Instant and Advanced steps while it's recent and its
+// or null) and when it was read. Hidden from the user; used for Instant steps while it's recent and its
 // best price is still the row's ratio (app.js listFor).
 // Each read is also kept for an hour (READS_FOR) in the row's `reads`, oldest first, for its undercutting (undercut.js),
 // and for HISTORY_FOR in the read history (history.js).

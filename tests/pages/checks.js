@@ -4,7 +4,7 @@
 // before the page loads; t.ok(cond, name, detail) and t.eq(got, want, name) record results.
 import { addRead, allReads, clearReads, HISTORY_FOR } from "../../html/js/history.js";
 import { AT, findWindow } from "../../html/js/snip.js";
-import { ALCH, ANNUL, C, CHROM, D, E, EXPIRED_KEY, LEAGUE, SHARD, STORAGE, SULPHUR, VIVID } from "./seeds.js";
+import { ALCH, ANNUL, C, CHROM, D, E, LEAGUE, SHARD, STALE_KEY, STORAGE, SULPHUR, VIVID } from "./seeds.js";
 
 const NAMES = {
   [C]: "Chaos Orb", [D]: "Divine Orb", [E]: "Exalted Orb", [CHROM]: "Chromatic Orb", [VIVID]: "Vivid Crystallised Lifeforce",
@@ -97,6 +97,9 @@ async function click(el) {
 }
 const tabs = () => $$("#main .tabs a").map((a) => a.textContent.trim());
 const activeTab = () => $("#main .tabs a.active")?.textContent.trim();
+// Trade Recommendations' trading modes, and the one picked.
+const modes = () => $$(".mode-toggle a").map((a) => a.textContent);
+const activeMode = () => $(".mode-toggle a.active")?.textContent;
 const fixture = (game) => fetch(game === "poe2" ? "/poe2/rates.json" : "/rates.json").then((r) => r.json());
 const dialog = () => $("#ratio-dialog[open]");
 // The import window, shown (it's always on the page, hidden to its strip until shown).
@@ -124,10 +127,10 @@ const volumeParts = (cell) => Object.fromEntries(cell.innerHTML.split(" + ").map
 }));
 const routes = () => $$("#main details.other");
 const stepRowsOf = (box) => $$("table.steps tbody tr", box).filter((tr) => $("select.method", tr));
-// Which ratio a step read: want>have competing (slow), have>want instant (fast), as calc.js reads it.
+// Which ratio a step read: want>have competing (slow) or an estimate (no dropdown), have>want instant (fast), as calc.js reads it.
 function stepKey(tr) {
   const [recv, give] = titles($("button.ratio-link[data-pair]", tr)).map((n) => ID_OF[n]);
-  return $("select.method", tr).value === "slow" ? `${recv}>${give}` : `${give}>${recv}`;
+  return ($("select.method", tr)?.value ?? "slow") === "slow" ? `${recv}>${give}` : `${give}>${recv}`;
 }
 // A step's Ratio cell (an "extra" row's cells span the amounts).
 const ratioCell = (tr) => $("button.ratio-link[data-pair]", tr).closest("td");
@@ -230,7 +233,7 @@ async function oneList(t, seed, src, pair) {
   t.eq(r.status, `Imported prices for ${pair} (no competing trades).`, "imports the pair, saying which side has no trades");
   const { ratios } = saved(STORAGE.poe1).leagues[LEAGUE.poe1];
   t.eq(ratios[`${C}>${SHARD}`].value, [1, 1], "the list read fills its price");
-  t.ok(ratios[`${C}>${SHARD}`].verifiedAt > was[`${C}>${SHARD}`].verifiedAt, "and it's verified now");
+  t.ok(ratios[`${C}>${SHARD}`].verifiedAt > was[`${C}>${SHARD}`].verifiedAt, "and it's read now");
   const none = ratios[`${SHARD}>${C}`];
   t.eq([none.value, none.empty], [null, true], "the side with no trades is saved with none");
   t.ok(none.verifiedAt > was[`${SHARD}>${C}`].verifiedAt, "read now too");
@@ -255,9 +258,9 @@ function docked(t) {
 
 // ---------- checks ----------
 
-const NAV = ["Home", "Trade Recommendations", "My Listings", "Imported Ratios", "Trade Volumes"];
+const NAV = ["Home", "Trade Recommendations", "My Listings", "Market Ratios", "Trade Volumes"];
 const navLabel = (a) => a.textContent.trim().replace(/ \(\d+\)$/, ""); // My Listings (N)
-const HOME_CARDS = ["Your data", "Get the prices: Import Market Ratios", "Find a trade", "Support"];
+const HOME_CARDS = ["Your data", "Get the prices: Import Market Ratios", "If importing doesn't work", "Find a trade", "Support"];
 
 export const CHECKS = {
   nav: { game: "poe1", seed: "fresh", hash: "#/home", async run(t) {
@@ -305,7 +308,8 @@ export const CHECKS = {
       ["rgb(21, 21, 20)", "dark"], "dark colours, whatever the system's setting");
     t.eq($$("#main .guide h2").map((h) => h.textContent.trim()), HOME_CARDS, "cards in order, Your data first");
     t.eq($$("#main .guide a[href^='#/']").map((a) => [text(a), a.getAttribute("href")]),
-      [["Trade Volumes", "#/trade-volumes"], ["Trade Recommendations", "#/trade-recommendations"], ["My Listings", "#/my-listings"]], "the pages it names link to them");
+      [["Trade Recommendations", "#/trade-recommendations/estimated"], ["My Listings", "#/my-listings"], ["Trade Volumes", "#/trade-volumes"],
+        ["Trade Recommendations", "#/trade-recommendations"], ["My Listings", "#/my-listings"]], "the pages it names link to them, Estimated Trading's in its card");
     t.eq($$("#main .guide [data-import]").length, 3, "Import Market Ratios in its text: three links to the import window");
     await click($("#main .guide [data-import]"));
     t.eq([w.location.hash, !!liveDialog()], ["#/home", true], "a click opens it");
@@ -326,19 +330,17 @@ export const CHECKS = {
 
   tradesEmpty: { game: "poe1", seed: "empty", hash: "#/trade-recommendations", async run(t) {
     await ready();
-    t.eq(tabs(), ["Verified (0)", "Expired (0)"], "tabs");
-    t.eq(activeTab(), "Verified (0)", "Verified is the default tab");
-    t.eq($$(".mode-toggle a").map((a) => a.textContent), ["Competitive Trading", "Instant Trading"], "mode selector");
-    t.eq($(".mode-toggle a.active")?.textContent, "Competitive Trading", "Competitive is the default");
-    t.eq(text($("#main > p.muted")), `No trades have been verified for ${LEAGUE.poe1} in the last hour. Use Import Market Ratios at the top right to read them from the game.`, "empty tab message");
+    t.eq(tabs(), [], "no tabs");
+    t.eq(modes(), ["Competitive Trading", "Instant Trading", "Estimated Trading"], "mode selector");
+    t.eq(activeMode(), "Competitive Trading", "Competitive is the default");
+    t.eq(text($("#main > p.muted")), `No trades have been scanned for ${LEAGUE.poe1} in the last 4 hours. Use Import Market Ratios at the top right to read them from the game.`, "empty message");
     await click($("#main [data-import]"));
     docked(t);
   } },
 
   trades: { game: "poe1", seed: "fresh", hash: "#/trade-recommendations", async run(t, seed) {
     await ready();
-    t.eq(tabs(), ["Verified (13)", "Expired (0)"], "tabs count the listed rows");
-    t.eq($(".mode-toggle a.active")?.textContent, "Competitive Trading", "Competitive is the default");
+    t.eq(activeMode(), "Competitive Trading", "Competitive is the default");
     t.eq($$("details[data-section]").map((d) => [text($("h2", d)), d.open]),
       [["Profitable (8)", true], ["Unprofitable (5)", false]], "sections, only Profitable open; nothing Untradeable");
     t.eq($$("table.summary thead th").map((th) => th.textContent.trim()),
@@ -365,7 +367,7 @@ export const CHECKS = {
     t.ok(!tradeRow(VIVID).classList.contains("losing"), "Vivid isn't greyed");
     t.eq([text(cell(SULPHUR, "fill")), cellTags(cell(SULPHUR, "fill"))], ["—", []], "Sulphur: fill time unknown, no tag");
     t.eq(cellTags(cell(CHROM, "fill")), [], "Chromatic: no fill-time tag");
-    // The scan age tag, right after the item: green while verified, the oldest price's pair and time on hover.
+    // The scan age tag, right after the item: green, the oldest price's pair and time on hover.
     const tag = (id, route) => $(".tag", cell(id, "age", route));
     const scan = (id, route) => [tag(id, route)?.textContent, tag(id, route)?.title, tag(id, route)?.classList.contains("verified")];
     t.eq(scan(CHROM), ["5m", `Chaos Orb:Chromatic Orb at ${scanDate(atOf(seed, `${C}>${CHROM}`))}`, true], "tag: Chromatic, hubs first");
@@ -414,28 +416,52 @@ export const CHECKS = {
     t.eq(top(), `after:${D}`, "opened another way: the best one");
   } },
 
-  tradesExpired: { game: "poe1", seed: "expired", hash: "#/trade-recommendations/expired", async run(t, seed) {
+  // A scan over 4 hours old isn't used: Chromatic's routes through Chaos ↔ Chromatic leave Competitive and Instant for
+  // Estimated Trading, that step at the pair's estimate (the fixture's latest hour: 70,000 Chromatic for 20,000 Chaos).
+  tradesEstimated: { game: "poe1", seed: "stale", hash: "#/trade-recommendations", async run(t) {
     await ready();
-    t.eq(tabs(), ["Verified (10)", "Expired (3)"], "tabs");
-    t.eq(activeTab(), "Expired (3)", "Expired tab open");
-    const sections = await openSections();
-    t.eq(Object.values(sections).flat(), [`after:${D}`, "direct", `before:${D}`].map((r) => `${CHROM}|${r}`), "lists Chromatic's routes only");
-    const tag = $(".tag", tradeRow(CHROM).cells[COL.age]);
-    t.eq([tag?.textContent, tag?.title, tag?.classList.contains("manual"), tag?.getAttribute("href")],
-      ["1h", `Chaos Orb:Chromatic Orb at ${scanDate(atOf(seed, EXPIRED_KEY))}`, true, "#/imported-ratios/expired"], "tag: the expired price, grey");
+    const listed = Object.values(await openSections()).flat();
+    t.ok(listed.length && !listed.some((k) => k.startsWith(`${CHROM}|`)), "Competitive: none of Chromatic's routes", listed.join(", "));
+    await click($$(".mode-toggle a").find((a) => a.textContent === "Estimated Trading"));
+    t.eq([w.location.hash, activeMode()], ["#/trade-recommendations/estimated", "Estimated Trading"], "Estimated Trading");
+    const estimated = Object.values(await openSections()).flat();
+    t.eq(estimated.filter((k) => !k.startsWith("CurrencyRerollSocketLinks|")).sort(), [`after:${D}`, "direct", `before:${D}`].map((r) => `${CHROM}|${r}`).sort(),
+      "lists Chromatic's routes, and Orb of Fusing's (never scanned)");
+    const tag = $(".tag", tradeRow(CHROM, "direct").cells[COL.age]);
+    t.eq([tag?.textContent, tag?.classList.contains("estimate"), tag?.title],
+      ["estimated", true, "Some prices are the average of the last hour's trades, not a scan"], "tag: estimated");
+    t.ok(/^[+-]/.test(text(tradeRow(CHROM, "direct").cells[COL.profit]).replace("Chaos Orb ", "")), "priced", text(tradeRow(CHROM, "direct").cells[COL.profit]));
+    await go(`#/item/${CHROM}/estimated`);
+    t.eq(tabs(), ["Competitive Trading", "Instant Trading", "Estimated Trading"], "item page: three tabs");
+    t.eq($("#main h1 .tag")?.textContent, "estimated", "heading: the estimated tag");
+    for (const box of routes()) if (!box.open) { $("summary", box).click(); await waitFor(() => box.open); }
+    const steps = routes().flatMap((box) => $$("table.steps tbody tr", box));
+    const est = steps.filter((tr) => $(".tag.estimate", ratioCell(tr)));
+    t.ok(est.length && est.every((tr) => stepKey(tr) === `${CHROM}>${C}` || stepKey(tr) === `${C}>${CHROM}`),
+      "estimate tags only on Chaos ↔ Chromatic steps", est.map(stepKey).join(", "));
+    t.ok(est.every((tr) => $("select", tr)?.value === "estimate" && $$("option", $("select", tr)).map((o) => o.textContent).join() === "Estimated,Manual"),
+      "their Type: Estimate, or Manual");
+    t.ok(steps.filter((tr) => !est.includes(tr)).every((tr) => $("select.method", tr)?.value === "slow"), "scanned steps: the dropdown, Competitive");
+    const direct = routes().find((r) => r.dataset.row === "direct");
+    t.ok(/1 Chromatic Orb: 3\.5 Chaos Orb|3\.5 Chaos Orb/.test(text($("table.steps tbody tr", direct))), "Chaos → Chromatic at 1 : 3.5",
+      text($("table.steps tbody tr", direct)));
+    await go("#/trade-recommendations/estimated");
+    await click($("a", tradeRow(CHROM, "direct")));
+    t.eq(w.location.hash, `#/item/${CHROM}/estimated`, "a row opens its item on Estimated Trading");
   } },
 
-  // Each route is on the tab its own prices put it: with Chromatic ↔ Chaos expired and Divine to start from, Divine →
-  // Chromatic → Divine is verified, and only the routes through Chaos are expired.
-  tradesRouteExpired: { game: "poe1", seed: "expiredFromDivine", hash: "#/trade-recommendations/expired", async run(t, seed) {
+  // Each route goes by its own prices: starting from Divine, Divine → Chromatic → Divine stays on Competitive, and only the
+  // routes through Chaos are estimated.
+  tradesRouteEstimated: { game: "poe1", seed: "staleFromDivine", hash: "#/trade-recommendations/estimated", async run(t) {
     await ready();
-    const expired = Object.values(await openSections()).flat();
-    t.eq(expired.filter((k) => k.startsWith(`${CHROM}|`)).sort(), [`after:${C}`, `before:${C}`].map((r) => `${CHROM}|${r}`),
-      "Expired: Chromatic's routes through Chaos only");
-    t.ok(expired.every((k) => k.startsWith(`${CHROM}|`)), "and no other item's", expired.join(", "));
+    const sections = await openSections(), estimated = Object.values(sections).flat();
+    t.eq(estimated.filter((k) => k.startsWith(`${CHROM}|`)).sort(), [`after:${C}`, `before:${C}`].map((r) => `${CHROM}|${r}`).sort(),
+      "Estimated: Chromatic's routes through Chaos only");
+    t.ok(sections.untradeable?.includes("CurrencyRerollSocketLinks|direct"), "Orb of Fusing has no Divine market: Untradeable");
+    t.eq(text($(".tag", tradeRow("CurrencyRerollSocketLinks", "direct").cells[COL.profit])), "no estimated price", "tagged no estimated price");
     await go("#/trade-recommendations");
-    const verified = Object.values(await openSections()).flat();
-    t.ok(verified.includes(`${CHROM}|direct`) && !verified.includes(`${CHROM}|after:${C}`), "Verified: Divine → Chromatic → Divine", verified.join(", "));
+    const scanned = Object.values(await openSections()).flat();
+    t.ok(scanned.includes(`${CHROM}|direct`) && !scanned.includes(`${CHROM}|after:${C}`), "Competitive: Divine → Chromatic → Divine", scanned.join(", "));
     const tag = $(".tag", tradeRow(CHROM, "direct").cells[COL.age]);
     t.ok(tag?.classList.contains("verified") && /^Chromatic Orb:Divine Orb at |^Divine Orb:Chromatic Orb at /.test(tag?.title ?? ""),
       "its tag: its own oldest price, Chromatic ↔ Divine, green", tag?.title);
@@ -446,7 +472,7 @@ export const CHECKS = {
     t.eq([$("#main .back a")?.textContent, $("#main .back a")?.getAttribute("href")], ["← Back to Trade Recommendations", "#/trade-recommendations"], "back link: to Trade Recommendations in the page's mode");
     const tag = $("#main h1 .tag.verified");
     t.eq([tag?.textContent, tag?.title], ["5m", `Chaos Orb:Chromatic Orb at ${scanDate(atOf(seed, `${C}>${CHROM}`))}`], "verified tag and its title");
-    t.eq(tabs(), ["Competitive Trading", "Instant Trading"], "mode tabs");
+    t.eq(tabs(), ["Competitive Trading", "Instant Trading", "Estimated Trading"], "mode tabs");
     t.eq(activeTab(), "Competitive Trading", "Competitive tab open");
     t.eq(routes().map((r) => r.open), [true, true, false], "profitable routes start open, the rest folded");
     t.eq(routes().map((r) => r.classList.contains("top")), [true, false, false], "only the best route is highlighted");
@@ -464,15 +490,15 @@ export const CHECKS = {
     t.eq(titles($(":scope > span:not(.sep)", line)), ["Chaos Orb"], "per minute in the profit's currency");
     t.ok(/^Chaos Orb \+\S+ .*·\s*~\d+ min·\s*Chaos Orb \+[\d,]+\.\d\d \/ min·\s*Gold [\d,]+$/.test(text(line)), "profit, then fill time, per minute to two decimals, gold (its icon)", text(line));
     t.eq($$("p.muted", routes()[0]).map(text), [], "no line under the steps: what's left over is in the profit");
-    t.eq($$("#main table.steps .tag.manual").map((x) => x.textContent), [], "no expired tags");
+    t.eq($$("#main table.steps .tag.estimate").map((x) => x.textContent), [], "no estimate tags");
     t.ok($$("#main table.steps tbody tr").filter((tr) => $("select.method", tr)).every((tr) => $(".tag.verified[data-scan-at]", ratioCell(tr))),
-      "every step's Ratio has its scan's age, green while verified");
+      "every step's Ratio has its scan's age, green");
     $("table.steps tbody button.ratio-link[data-pair]", routes()[0]).click();
     const d = await waitFor(dialog);
     if (t.ok(d && !d.classList.contains("live"), "price window opens")) {
       t.ok(d.matches(":modal"), "price window is modal");
-      t.eq($$("button", d).map((b) => b.textContent), ["×"], "price window's only button is ×");
-      t.eq($$("input, select, textarea", d).length, 0, "price window is read-only");
+      t.eq($$("button", d).map((b) => b.textContent), ["×", "1", "3.69", "1", "3.40"], "price window: × and each price's two numbers, to type over");
+      t.eq($$("input, select, textarea", d).length, 0, "no box until a number is clicked");
       t.eq($$("tr.cols th", d).map((th) => th.textContent), ["Available Trades", "Competing Trades"], "price window columns");
       t.eq(w.getComputedStyle(d, "::backdrop").backgroundColor, "rgba(0, 0, 0, 0.7)", "price window backdrop");
       $("#dialog-close").click();
@@ -702,6 +728,103 @@ export const CHECKS = {
   // each number is a box once clicked, Enter takes what's typed and Esc doesn't; in the scan tag's place, reset goes back to
   // the Competing price (greyed out at it); a newer scan and a reload leave it alone; started, its ratio is the usual button
   // again.
+  // A listing's step whose price isn't scanned is an Estimate step: Estimate or Manual only, Manual starting from the
+  // estimate, its reset back to the estimate; once scanned it's back to Competitive.
+  listingEstimate: { game: "poe1", seed: "stale", hash: `#/item/${CHROM}/estimated`, async run(t, seed, page) {
+    await ready();
+    const direct = () => routes().find((r) => r.dataset.row === "direct");
+    if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); }
+    await click($("[data-add-listing]", direct()));
+    await go("#/my-listings");
+    const row = () => $$("#main table.steps tbody tr")[0], cell = () => $$("td", row())[3];
+    t.eq([$$("option", $("select.method", row())).map((o) => o.textContent), $("select.method", row()).value, cellTags(cell())],
+      [["Estimated", "Manual"], "estimate", ["estimated"]], "Chaos → Chromatic: an Estimated step, Estimated or Manual");
+    t.eq([$$(".step-buttons button", row()).length, text($(".estimate-note", row())), $(".estimate-note", row())?.title],
+      [0, "Cannot trade", "Set its Type to Manual and type the price the game shows first"], "an Estimate step: no buttons, a warning instead");
+    t.eq($$("option", $("select.method", $$("#main table.steps tbody tr")[1])).map((o) => o.textContent), ["Competitive", "Instant", "Manual"],
+      "Chromatic → Chaos, scanned: its usual Types");
+    const sel = $("select.method", row());
+    sel.value = "manual";
+    sel.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => $(".manual-edit", cell()));
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "Manual starts from the estimate, 1 : 3.5");
+    t.ok(!$("[data-listing-play]", row()).disabled, "Manual: its play button is on");
+    await click($$(".manual-edit", cell())[1]);
+    $("#manual-ratio").value = "3.4";
+    $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await sleep(50);
+    t.eq([$("[data-manual-reset]", cell())?.title, $("[data-manual-reset]", cell())?.disabled], ["Back to the estimated price", false], "reset: back to the estimated price");
+    await click($("[data-manual-reset]", cell()));
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "reset takes it back");
+    t.eq($$("option", $("select.method", row())).map((o) => o.textContent), ["Estimated", "Manual"], "Manual with no Competing price scanned: Estimated or Manual");
+    const back = $("select.method", row());
+    back.value = "estimate";
+    back.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => !$(".manual-edit", cell()));
+    t.eq([$("select.method", row()).value, cellTags(cell())], ["estimate", ["estimated"]], "back to Estimated");
+    t.eq(saved(STORAGE.poe1).listings[0].methods[0], "slow", "kept as Competitive, for when it's scanned");
+    // Scanned again: the step is back to the Type it was given, Competitive.
+    const l = saved(STORAGE.poe1).listings[0];
+    l.methods[0] = "slow";
+    const state = saved(STORAGE.poe1);
+    state.listings = [l];
+    state.leagues[LEAGUE.poe1].ratios[`${CHROM}>${C}`] = { value: [1, 3.4], digits: [0, 2], verifiedAt: Date.now() };
+    w.localStorage.setItem(STORAGE.poe1, JSON.stringify(state));
+    await page.open("/poe1#/my-listings", "/poe1");
+    await ready();
+    t.eq([$("select.method", row())?.value, cellTags(cell())[0]?.endsWith("m")], ["slow", true], "scanned: Competitive, with its scan's age");
+  } },
+
+  // One Manual price per direction: set on an item page's Manual step, it's the price of every Manual step on that direction,
+  // on My Listings too, and the price window and Market Ratios' Manual tab show it; typed in the price window, it changes them
+  // all; reset sets it back to the estimate.
+  manualShared: { game: "poe1", seed: "stale", hash: `#/item/${CHROM}/estimated`, async run(t) {
+    await ready();
+    const direct = () => routes().find((r) => r.dataset.row === "direct");
+    const open = async () => { if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); } };
+    await open();
+    await click($("[data-add-listing]", direct()));
+    // Chaos → Chromatic, an Estimate step at 1 : 3.5: set to Manual on the item page, then typed.
+    const sel = $("select.method", $("table.steps tbody tr", direct()));
+    sel.value = "manual";
+    sel.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => $(".manual-edit", direct()));
+    const cell = () => $$("td", $("table.steps tbody tr", direct()))[3];
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "item page: Manual starts from the estimate");
+    await click($$(".manual-edit", cell())[1]);
+    $("#manual-ratio").value = "3.6";
+    $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await sleep(50);
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.6"], "typed: 1 : 3.6");
+    await go("#/my-listings");
+    const row = () => $$("#main table.steps tbody tr")[0];
+    const lsel = $("select.method", row());
+    lsel.value = "manual";
+    lsel.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => $(".manual-edit", row()));
+    t.eq($$(".manual-edit", row()).map(text), ["1", "3.6"], "My Listings: a Manual step on the same direction has the same price");
+    await click($("button.ratio-link[data-pair]", $$("#main table.steps tbody tr")[1]));
+    const dlg = () => $("#ratio-dialog");
+    const line = () => $("tbody.dialog-pair tr:last-child", dlg());
+    t.eq([$$(".manual-edit", line()).map(text), $$("td.r-tags", line())[1].textContent.replace(/\s+/g, " ").trim()],
+      [["1", "3.69", "1", "3.6"], "manual reset"], "the price window: the Manual price, tagged manual, with reset");
+    await click($$(".manual-edit", line())[3]);
+    $("#manual-ratio").value = "3.55";
+    $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await sleep(50);
+    $("#dialog-close").click();
+    await waitFor(() => !dlg());
+    t.eq($$(".manual-edit", row()).map(text), ["1", "3.55"], "typed in the window: the listing's step follows");
+    await go("#/market-ratios/manual");
+    t.eq([activeTab(), $$("tbody[data-row]").map((b) => b.dataset.row)], ["Manual (1)", [CHROM]], "Market Ratios' Manual tab lists it");
+    t.ok(!$("#main table.ratios .manual-edit, #main table.ratios [data-manual-reset]"), "not editable there");
+    await go(`#/item/${CHROM}/estimated`);
+    await open();
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.55"], "and the item page's");
+    await click($("[data-manual-reset]", cell()));
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "reset: back to the estimate");
+  } },
+
   listingManual: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t, seed, page) {
     await ready();
     await click($("[data-add-listing]", routes()[0]));
@@ -831,7 +954,7 @@ export const CHECKS = {
   itemTypes: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t) {
     await ready();
     const sel = () => $("select.method", stepRowsOf(routes()[0])[0]);
-    t.eq($$("option", sel()).map((o) => o.textContent), ["Competitive", "Instant"], "the selector's two choices, in the tabs' order");
+    t.eq($$("option", sel()).map((o) => o.textContent), ["Competitive", "Instant", "Manual"], "the selector: Competitive and Instant, in the tabs' order, then Manual");
     const methods = () => [...new Set($$("select.method").map((s) => s.value))].sort();
     const tab = (name) => $$("#main .tabs a").find((a) => a.textContent === name);
     const toInstant = async () => {
@@ -857,20 +980,13 @@ export const CHECKS = {
     t.eq(stepRowsOf(first).filter((tr) => tr.classList.contains("bad")).length, 0, "no step shaded red");
   } },
 
-  itemExpired: { game: "poe1", seed: "expired", hash: `#/item/${CHROM}/competitive`, async run(t, seed) {
+  // A scan over 4 hours old is forgotten: its routes are "not scanned" on Competitive, and it's gone from the saved state.
+  itemStale: { game: "poe1", seed: "stale", hash: `#/item/${CHROM}/competitive`, async run(t) {
     await ready();
-    const tag = $("#main h1 .tag.manual");
-    t.eq([tag?.textContent, tag?.title], ["1h", `Chaos Orb:Chromatic Orb at ${scanDate(atOf(seed, EXPIRED_KEY))}`], "heading: grey tag with the oldest price's age");
-    for (const mode of ["competitive", "available"]) {
-      if (mode === "available") await click($$("#main .tabs a").find((a) => a.textContent === "Instant Trading"));
-      for (const box of routes()) if (!box.open) { $("summary", box).click(); await waitFor(() => box.open); }
-      const steps = routes().flatMap(stepRowsOf);
-      const tagged = steps.filter((tr) => $(".tag.manual", ratioCell(tr)));
-      const wrong = steps.filter((tr) => !!$(".tag.manual", ratioCell(tr)) !== (stepKey(tr) === EXPIRED_KEY));
-      t.ok(tagged.length, `${mode}: a step using the old price has the expired tag`);
-      t.eq(wrong.map((tr) => text(ratioCell(tr))), [], `${mode}: expired tags only on steps that read ${NAMES[CHROM]}:${NAMES[C]}`);
-      t.eq([...new Set(tagged.map((tr) => $(".tag.manual", ratioCell(tr)).title))], [`Scanned ${scanDate(atOf(seed, EXPIRED_KEY))}`], `${mode}: tag's title`);
-    }
+    t.eq($("#main h1 .tag"), null, "heading: no tag, a price isn't scanned");
+    const unread = routes().filter((r) => /Not read from the game yet:/.test(r.textContent)).map((r) => r.dataset.row);
+    t.eq(unread.sort(), [`after:${D}`, "direct"], "the routes buying Chromatic with Chaos: not scanned");
+    t.ok(!(STALE_KEY in saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios), "the old scan is dropped");
   } },
 
   itemGap: { game: "poe1", seed: "gap", hash: `#/item/${CHROM}/competitive`, async run(t) {
@@ -897,21 +1013,19 @@ export const CHECKS = {
     }
   } },
 
-  // Beside each hub count, its pair's age: the older of its two prices, grey once expired, none for a pair never scanned.
-  volumesAge: { game: "poe1", seed: "expired", hash: "#/trade-volumes", async run(t) {
+  // Beside each hub count, its pair's age: the older of its two prices scanned, none for a pair not scanned.
+  volumesAge: { game: "poe1", seed: "stale", hash: "#/trade-volumes", async run(t) {
     await ready();
     const heads = $$("table.volumes thead th:not(.age)").slice(2).map((th) => titles(th)[0] ?? th.textContent.trim());
     const got = Object.fromEntries($$("table.volumes tbody tr").map((tr) => [titles(tr.cells[0])[0],
-      Object.fromEntries($$("td.age", tr).map((td, i) => [heads[i], td.textContent.trim()
-        + ($(".tag.manual", td) ? " expired" : "")]))]));
+      Object.fromEntries($$("td.age", tr).map((td, i) => [heads[i], td.textContent.trim()]))]));
     const want = (c, d) => ({ "Chaos Orb": c, "Divine Orb": d });
     t.eq(got[NAMES[C]], want("", "2m"), "Chaos: blank in its own column, Chaos ↔ Divine's age in Divine's");
-    t.eq(got[NAMES[CHROM]], want("1h expired", "2m"), "Chromatic: its 90-minute price, grey");
+    t.eq(got[NAMES[CHROM]], want("5m", "2m"), "Chromatic: its 5-hour price gone, the other way's");
     t.eq(got[NAMES[VIVID]], want("2m", "6m"), "Vivid: the older of its Divine pair's two prices");
     const unscanned = Object.entries(got).filter(([name]) => ![C, D, CHROM, VIVID, SULPHUR, ALCH].some((id) => NAMES[id] === name));
     t.ok(unscanned.length && unscanned.every(([, ages]) => Object.values(ages).every((a) => a === "")), "no tag for a pair never scanned",
       JSON.stringify(unscanned));
-    t.ok($("table.volumes td.age a.tag.manual[href='#/imported-ratios/expired']"), "an expired tag links to Imported Ratios' Expired tab");
     // Each hub's header ends where its counts do (icon first, the number last), with each tag just after its count.
     const right = (el) => Math.round(el.getBoundingClientRect().right);
     const contentRight = (td) => { const r = w.document.createRange(); r.selectNodeContents(td); return right(r); };
@@ -935,31 +1049,38 @@ export const CHECKS = {
     await volumesCheck(t, "poe2", [E, D]);
   } },
 
-  ratios: { game: "poe1", seed: "fresh", hash: "#/imported-ratios", async run(t, seed) {
+  ratios: { game: "poe1", seed: "fresh", hash: "#/market-ratios", async run(t, seed) {
     await ready();
-    t.eq(tabs(), ["Verified (5)", "Expired (0)"], "tabs count currencies");
-    t.ok(!$("#remove-expired"), "no Clear All on Verified");
+    t.eq([tabs(), activeTab(), $("#main .clear-all")], [["Competitive (5)", "Instant (5)", "Estimated (1)", "Manual (0)"], "Competitive (5)", null],
+      "tabs: Competitive, the default, Instant, Estimated (Orb of Fusing, never scanned) and Manual; no Clear All");
     t.eq(text($("tbody[data-row] .group-head")), "Chaos ↔ Divine", "Chaos ↔ Divine first");
+    t.eq($$("tbody[data-row] .group-head").length, 5, "every currency scanned");
     const times = new Set(Object.values(seed.leagues[seed.league].ratios).map((r) => r.verifiedAt));
     const tags = $$("#main .tag.verified");
-    t.eq(tags.length, 18, "a verified tag per scanned price");
+    t.eq(tags.length, 9, "a green tag per scanned Competing price");
     t.eq(tags.filter((x) => !times.has(Number(x.dataset.scanAt)) || x.title !== `Scanned ${scanDate(Number(x.dataset.scanAt))}`)
       .map((x) => x.title), [], "tags' titles: Scanned <date>");
-    await click($$("#main .tabs a")[1]);
-    t.eq(text($("#main > p.muted")), `No rates have expired for ${LEAGUE.poe1}.`, "Expired tab: empty message");
+    await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Estimated")));
+    t.eq(w.location.hash, "#/market-ratios/estimated", "Estimated's address");
+    t.eq($$("tbody[data-row]").map((b) => b.dataset.row), ["CurrencyRerollSocketLinks"], "Estimated: the currency with an estimate");
+    const est = $$("#main table.ratios tbody[data-row] tr:not(.group) td.r-tags").map((td) => td.textContent.trim());
+    t.eq(est.slice(0, 2), ["estimated", "estimated"], "its Chaos line at the estimated price, both ways");
+    t.ok(!$("#main table.ratios .manual-edit, #main table.ratios input"), "nothing to edit");
+    await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Manual")));
+    t.eq(text($("#main > p.muted")), `No manual prices for ${LEAGUE.poe1}. Set a step's Type to Manual, or type into a price's window, to add one.`, "Manual: empty message");
   } },
 
   // Each price is six cells (icon, number, colon, number, icon, tags), so every row's parts line up: the colons in one
   // column, each number against its side of the colon and each icon against its number.
-  ratioCells: { game: "poe1", seed: "fresh", hash: "#/imported-ratios", async run(t) {
+  ratioCells: { game: "poe1", seed: "fresh", hash: "#/market-ratios", async run(t) {
     await ready();
     const rows = pageRows();
     t.eq(rows.map((tr) => [...tr.cells].map((td) => td.className.replace(/ ?muted/, "")).join(" ")).filter((x, i, all) => all.indexOf(x) === i),
-      [["r-icon r-end", "r-num r-end", "r-colon", "r-num", "r-icon", "r-tags"].join(" ").repeat(2).replace("r-tagsr-icon", "r-tags r-icon") + " num wait num spread vol"],
-      "every row: icon, number, colon, number, icon, tags, twice, then Wait, Spread and the volume");
+      [["r-icon r-end", "r-num r-end", "r-colon", "r-num", "r-icon", "r-tags", "num wait", "vol"].join(" ")],
+      "every row (Competitive): icon, number, colon, number, icon, tags, then Wait and the volume");
     const box = (el) => el.getBoundingClientRect();
     const ink = (td) => { const r = w.document.createRange(); r.selectNodeContents(td); return r.getBoundingClientRect(); };
-    for (const col of [0, 6]) {
+    for (const col of [0]) {
       const at = (i) => rows.map((tr) => tr.cells[col + i]);
       const same = (xs) => Math.max(...xs) - Math.min(...xs) <= 1;
       t.ok(same(at(2).map((td) => (box(td).left + box(td).right) / 2)), `column ${col / 6 + 1}: colons line up`);
@@ -972,19 +1093,23 @@ export const CHECKS = {
     }
   } },
 
-  // Wait: the Competing queue's fill time at the pair's pace (only where its stock was read); Spread: how far apart the
-  // two prices are.
-  ratioStats: { game: "poe1", seed: "stocked", hash: "#/imported-ratios", async run(t) {
+  // Competitive: the Competing price and Wait, the Competing queue's fill time at the pair's pace (only where its stock was
+  // read); Instant: the Available price alone.
+  ratioStats: { game: "poe1", seed: "stocked", hash: "#/market-ratios", async run(t) {
     await ready();
-    t.eq($$("#main table.ratios thead th").filter((el) => !el.closest("#live-dialog")).map((th) => th.textContent), ["Available Trades", "Competing Trades", "Wait", "Spread", "Traded last hour"], "headers");
-    const line = (n) => { const tr = pageRows()[n]; return [tr.querySelector(".wait").textContent, tr.querySelector(".spread").textContent]; };
-    t.eq(line(0), ["~1.0 h", "2.7%"], "Chaos ↔ Divine: 250 div queued at 250 an hour (a quarter of the 1,000 traded); 370 against 380");
-    t.eq(line(1), ["", "8.5%"], "Chromatic vs Chaos: no stock read, no wait; 3.69 against 3.40");
+    const heads = () => $$("#main table.ratios thead th").filter((el) => !el.closest("#live-dialog")).map((th) => th.textContent);
+    t.eq(heads(), ["Competing Trades", "Wait", "Traded last hour"], "Competitive: headers");
+    const wait = (n) => pageRows()[n].querySelector(".wait").textContent;
+    t.eq(wait(0), "~1.0 h", "Chaos ↔ Divine: 250 div queued at 250 an hour (a quarter of the 1,000 traded)");
+    t.eq(wait(1), "", "Chromatic vs Chaos: no stock read, no wait");
+    await go("#/market-ratios/available");
+    t.eq([activeTab(), heads()], ["Instant (5)", ["Available Trades", "Traded last hour"]], "Instant: the Available price alone");
+    t.eq(text($$("td", pageRows()[0]).find((td) => td.classList.contains("r-num"))), "370", "Chaos ↔ Divine: 370 : 1");
   } },
 
   // Undercutting (SPEC.md §3.6): 250 div an hour posted ahead of Chaos:Divine's best price, read from its lists, drains its
   // queue at the floor, half the pace.
-  undercut: { game: "poe1", seed: "undercut", hash: "#/imported-ratios", async run(t) {
+  undercut: { game: "poe1", seed: "undercut", hash: "#/market-ratios", async run(t) {
     await ready();
     t.eq(pageRows()[0].querySelector(".wait").textContent, "~2.0 h", "Wait: 250 div queued at 250 an hour less 250 undercutting, no less than 125");
     await go(`#/item/${CHROM}/competitive`);
@@ -995,7 +1120,7 @@ export const CHECKS = {
 
   // Measured buying (SPEC.md §3.6): 150 div an hour of Chaos:Divine's orders bought, read from its lists, paces its queue in
   // place of the pair's 250.
-  bought: { game: "poe1", seed: "bought", hash: "#/imported-ratios", async run(t) {
+  bought: { game: "poe1", seed: "bought", hash: "#/market-ratios", async run(t) {
     await ready();
     t.eq(pageRows()[0].querySelector(".wait").textContent, "~1.7 h", "Wait: 250 div queued at 150 an hour");
     await go(`#/item/${CHROM}/competitive`);
@@ -1004,14 +1129,13 @@ export const CHECKS = {
     t.eq([...new Set(titled)], ["Paced by your scans: about 150 Divine Orb bought an hour"], "its hover");
   } },
 
-  ratiosEmpty: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  ratiosEmpty: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
-    t.eq(tabs(), ["Verified (0)", "Expired (0)"], "tabs");
-    t.ok(!$("#remove-expired"), "no Clear All on Verified");
-    t.eq(text($("#main > p.muted")), `No rates have been verified for ${LEAGUE.poe1} in the last hour. Use Import Market Ratios at the top right to read them from the game.`, "empty message");
+    t.eq(tabs(), ["Competitive (0)", "Instant (0)", "Estimated (5)", "Manual (0)"], "tabs");
+    t.eq(text($("#main > p.muted")), `No Competing Trades have been scanned for ${LEAGUE.poe1} in the last 4 hours. Use Import Market Ratios at the top right to read them from the game.`, "empty message");
   } },
 
-  importWindow: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importWindow: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     t.ok($("#live-dialog[open].collapsed") && !liveDialog(), "on load, the import window is on the page, hidden to its strip");
     await click($("#live-import"));
@@ -1047,7 +1171,7 @@ export const CHECKS = {
 
   // Frames are read in a worker (js/reader.js): a read of the largest test frame (about 0.4 s) doesn't hold up the page.
   // Left out on CI (.github/workflows/tests.yml), where the runners' pauses don't come from the page.
-  importOffPage: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importOffPage: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     let last = performance.now(), longest = 0;
     const tick = w.setInterval(() => { const now = performance.now(); longest = Math.max(longest, now - last); last = now; }, 10);
@@ -1060,7 +1184,7 @@ export const CHECKS = {
   // The reader and its helper (js/reader.js) split a frame between them: the lists and names as one read gives them, the
   // `?debug` nearest names for both boxes, and a second read of the same frame confirmed from its crops. Name boxes
   // read before read as they did, and other names in them as themselves.
-  readerHelper: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  readerHelper: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     const catalog = await (await fetch("/data/catalog.json")).json();
     const worker = new Worker(new URL("../../html/js/reader.js", import.meta.url), { type: "module" });
     const answer = () => new Promise((done) => { worker.onmessage = ({ data }) => done(data); });
@@ -1091,7 +1215,7 @@ export const CHECKS = {
 
   // Each list read is saved as its row's orders, with the price it gives: the row's stock and its list's first stock
   // are one reading, whichever list (a pair's Available, or the reverse pair's Competing) read the row last.
-  importLists: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importLists: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-full.png", /Imported prices/);
     t.ok(/Imported prices/.test(r.status), "the frame imports", r.status);
@@ -1103,7 +1227,7 @@ export const CHECKS = {
     }
   } },
 
-  importCancel: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importCancel: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(null, /Sharing was cancelled/);
     t.eq(r.status, "Sharing was cancelled.", "refused share: status");
@@ -1125,7 +1249,7 @@ export const CHECKS = {
     t.ok(!liveDialog(), "sharing hides it to its strip");
     await click($("#live-import"));
     t.eq([!!liveDialog(), $$("#live-dialog").length, text($(".live-status"))], [true, 1, "Imported prices for Chaos Orb and Divine Orb."], "Import Market Ratios shows it, as it was");
-    for (const label of ["Trade Volumes", "Imported Ratios"]) {
+    for (const label of ["Trade Volumes", "Market Ratios"]) {
       await click($$("nav a").find((a) => a.textContent === label));
       await sleep(300);
       t.ok(liveDialog() && sharing(), `${label}: still shown and sharing`);
@@ -1169,7 +1293,7 @@ export const CHECKS = {
     $("#live-stop").click();
     await waitFor(() => !liveDialog());
   } },
-  importPoe1: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importPoe1: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb.", "reads the shared window");
@@ -1203,14 +1327,14 @@ export const CHECKS = {
     const ratios = saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios;
     t.eq(Object.keys(ratios).sort(), [`${C}>${D}`, `${D}>${C}`].sort(), "both ways saved");
     t.eq([ratios[`${D}>${C}`].stock, ratios[`${C}>${D}`].stock], [4784, 111], "each with the stock at its best price");
-    t.eq(tabs(), ["Verified (1)", "Expired (0)"], "page behind shows it");
+    t.eq($$("#main tbody[data-row] .group-head").map(text), ["Chaos ↔ Divine"], "page behind shows it");
     $("#live-stop").click();
     t.ok(await waitFor(() => !liveDialog() && win().classList.contains("collapsed")), "the stop button hides the window to its strip");
     t.ok(await waitFor(() => r.stream()?.getVideoTracks().every((x) => x.readyState === "ended")), "and stops sharing");
     t.ok(!$("#live-stop") && $("[data-live-watch]", win()), "no stop button now, the record button back");
   } },
 
-  importPoe2: { game: "poe2", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importPoe2: { game: "poe2", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/poe2-exalted-2152x1243.png", /Imported prices/);
     t.eq(r.share, "Share Path of Exile 2 Screen", "PoE2's share button");
@@ -1223,8 +1347,8 @@ export const CHECKS = {
   // for it, and the rest are priced.
   tradesNoCompeting: { game: "poe1", seed: "noCompeting", hash: "#/trade-recommendations", async run(t) {
     await ready();
-    t.eq(tabs(), ["Verified (13)", "Expired (0)"], "Vivid still listed");
     const sections = await openSections();
+    t.ok(Object.values(sections).flat().some((k) => k.startsWith(`${VIVID}|`)), "Vivid still listed");
     const vivid = (list) => list.filter((k) => k.startsWith(VIVID));
     t.eq(vivid(sections.untradeable ?? []), [], "nobody else selling Vivid for Chaos: its routes are priced all the same");
     await go(`#/item/${VIVID}/competitive`);
@@ -1233,24 +1357,24 @@ export const CHECKS = {
     t.ok(sell && !$(".tag.warn", sell), "selling it posts the only order, at the pair's usual price (0.12 Chaos a Vivid), with nothing wrong",
       text($("table.steps", direct)));
     t.ok(!/no competing trades/.test(text(direct)), "and no tag saying nobody else is posting");
-    await go("#/imported-ratios");
-    t.eq($$("#main td.r-none").map(text), ["no trades"], "Imported Ratios shows the box as no trades");
+    await go("#/market-ratios/available");
+    t.eq($$("#main td.r-none").map(text), ["no trades"], "Market Ratios' Instant tab shows the box as no trades");
   } },
 
   // One list read: Available alone with no banners (no Competing trades), or Competing moved up under the game's "no
   // available trades" message. Seen from Alchemy Shard ↔ Chaos, both leave Competing Trades unread.
-  importNoCompeting: { game: "poe1", seed: "shard", hash: "#/imported-ratios", async run(t, seed) {
+  importNoCompeting: { game: "poe1", seed: "shard", hash: "#/market-ratios", async run(t, seed) {
     await oneList(t, seed, "/tests/snips/size-small-no-competing.png", "Alchemy Shard and Chaos Orb");
     t.ok(saved(STORAGE.poe1).leagues[LEAGUE.poe1].lists?.[`${C}>${SHARD}`], "Available's list saved");
   } },
 
-  importNoAvailable: { game: "poe1", seed: "shard", hash: "#/imported-ratios", async run(t, seed) {
+  importNoAvailable: { game: "poe1", seed: "shard", hash: "#/market-ratios", async run(t, seed) {
     await oneList(t, seed, "/tests/snips/size-small-no-available.png", "Chaos Orb and Alchemy Shard");
   } },
 
   // Available alone with no banners is also a hover without Alt: it isn't imported until it has shown for 3 seconds, so
   // holding Alt in that time imports both lists at once.
-  importOneListWaits: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importOneListWaits: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Waiting for price info/);
     await sleep(1500);
@@ -1263,7 +1387,7 @@ export const CHECKS = {
 
   // Alt held with the cursor over Competing, then moved off it: the window looks the same but for the cursor, and it's
   // read again and imported.
-  importCursorMoves: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importCursorMoves: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(await cursorOver("/tests/snips/size-5.png"), /Waiting for price info/);
     await sleep(1500);
@@ -1273,9 +1397,9 @@ export const CHECKS = {
     t.eq(text($(".live-status")), "Imported prices for Chaos Orb and Divine Orb.", "with both lists");
   } },
 
-  // Both prices scanned (still verified), then the pair left showing without Alt (Alt let go): Available is read again,
+  // Both prices scanned (still in use), then the pair left showing without Alt (Alt let go): Available is read again,
   // and Competing's price stays.
-  importAltLetGo: { game: "poe1", seed: "gap", hash: "#/imported-ratios", async run(t, seed) {
+  importAltLetGo: { game: "poe1", seed: "gap", hash: "#/market-ratios", async run(t, seed) {
     await ready();
     const r = await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb (no competing trades).", "Available alone, left showing: imported");
@@ -1283,8 +1407,8 @@ export const CHECKS = {
     t.eq(ratios[`${C}>${D}`], was[`${C}>${D}`], "Competing's price kept as it was");
     t.ok(ratios[`${D}>${C}`].verifiedAt > was[`${D}>${C}`].verifiedAt, "Available's read again");
   } },
-  // The same with both expired: the Competing price is saved as none.
-  importAltOld: { game: "poe1", seed: "gapOld", hash: "#/imported-ratios", async run(t) {
+  // The same with both read over 4 hours ago (no longer used): the Competing price is saved as none.
+  importAltOld: { game: "poe1", seed: "gapOld", hash: "#/market-ratios", async run(t) {
     await ready();
     await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Imported prices/);
     const none = saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios[`${C}>${D}`];
@@ -1292,7 +1416,7 @@ export const CHECKS = {
   } },
 
   // Left showing, Available alone is imported; Alt held then imports both lists at once, not 10 seconds later.
-  importOneListThenAlt: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importOneListThenAlt: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(await withoutAlt("/tests/snips/size-5.png"), /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb (no competing trades).", "Available alone, left showing: imported");
@@ -1306,7 +1430,7 @@ export const CHECKS = {
   } },
 
   // The same prices left showing aren't imported again; shown again after the box has gone (another hover), they are.
-  importShownAgain: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importShownAgain: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
     const at = () => saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios[`${D}>${C}`].verifiedAt, first = at();
@@ -1320,7 +1444,7 @@ export const CHECKS = {
 
   // Lists without the game's window (no title-bar buttons in sight) aren't read: the status says it can't see the window,
   // and nothing's imported until it shows.
-  importNoWindow: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  importNoWindow: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/moved-window.png", /Can't see/);
     t.eq(r.status, "Can't see the Currency Exchange window.", "status");
@@ -1334,14 +1458,14 @@ export const CHECKS = {
 
   // Chaos ↔ Divine's latest hour thin and far off (1,600 chaos a div, against the capture's 368 and the recent hours' and
   // days' 375): the reading is within 3x of those, so it's imported.
-  importThinHour: { game: "poe1", seed: "empty", hash: "#/imported-ratios",
+  importThinHour: { game: "poe1", seed: "empty", hash: "#/market-ratios",
     rates: (json) => pairWith(json, { volA: 1600000, volB: 1000 }), async run(t) {
     await ready();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
     t.eq(r.status, "Imported prices for Chaos Orb and Divine Orb.", "imported");
   } },
   // Every window far off (1,600 chaos a div in the latest hour, the recent hours and the days): not imported.
-  importAllFar: { game: "poe1", seed: "empty", hash: "#/imported-ratios",
+  importAllFar: { game: "poe1", seed: "empty", hash: "#/market-ratios",
     rates: (json) => pairWith(json, { volA: 1600000, volB: 1000, recentA: 6400000, recentB: 4000, dayA: 38400000, dayB: 24000 }), async run(t) {
     await ready();
     await importFrom("/tests/snips/size-5.png", /Waiting for price info/);
@@ -1350,7 +1474,7 @@ export const CHECKS = {
   } },
 
   // One list's price over 3x off the pair's last price (no hourly average here): not imported.
-  importOneListFar: { game: "poe1", seed: "shardFar", hash: "#/imported-ratios", async run(t, seed) {
+  importOneListFar: { game: "poe1", seed: "shardFar", hash: "#/market-ratios", async run(t, seed) {
     await ready();
     await importFrom("/tests/snips/size-small-no-available.png", /Waiting for price info/);
     await sleep(4000);
@@ -1370,7 +1494,6 @@ export const CHECKS = {
     await ready();
     t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),
       [["Exalted", true], ["Divine", false]], "start with Exalted or Divine, not Chaos");
-    t.eq(tabs(), ["Verified (7)", "Expired (0)"], "tabs");
     const sections = await openSections();
     t.eq(Object.values(sections).flat().sort(), [
       `${ANNUL}|after:${D}`, `${ANNUL}|before:${D}`, `${ANNUL}|direct`, `${C}|after:${D}`, `${C}|before:${D}`, `${C}|direct`, `${D}|direct`,
@@ -1400,7 +1523,7 @@ export const CHECKS = {
     t.ok(await waitFor(() => !amount.classList.contains("copied"), 2000), "the highlight goes again");
   } },
 
-  scanSound: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t) {
+  scanSound: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const starts = recordSound();
     const r = await importFrom("/tests/snips/size-3.png", /Imported prices/);
@@ -1438,8 +1561,8 @@ export const CHECKS = {
   } },
 
   // ?debug: nothing on screen; the log downloads when watching stops.
-  importDebug: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t, seed, page) {
-    await page.open("/poe1?debug#/imported-ratios", "/poe1");
+  importDebug: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t, seed, page) {
+    await page.open("/poe1?debug#/market-ratios", "/poe1");
     await ready();
     const files = catchDownloads();
     const r = await importFrom("/tests/snips/size-5.png", /Imported prices/);
@@ -1473,9 +1596,9 @@ export const CHECKS = {
 
   // The read history (SPEC.md §7): each list read is added to it, and ?debug saves it as JSON when watching ends, with the
   // site's version, how long it's kept and the undercutting's constants.
-  readHistory: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t, seed, page) {
+  readHistory: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t, seed, page) {
     await clearReads(LEAGUE.poe1);
-    await page.open("/poe1?debug#/imported-ratios", "/poe1");
+    await page.open("/poe1?debug#/market-ratios", "/poe1");
     await ready();
     const files = catchDownloads();
     await importFrom("/tests/snips/size-5.png", /Imported prices/);
@@ -1514,23 +1637,20 @@ export const CHECKS = {
     t.eq((await historyOf(LEAGUE.poe1)).map((r) => r.at), [now - HISTORY_FOR + 60000], "the older one is gone on load, the other kept");
   } },
 
-  // The Expired tab's Clear All forgets the league's expired prices only, and keeps its read history.
-  readHistoryKept: { game: "poe1", seed: "expired", hash: "#/imported-ratios/expired", async run(t, seed) {
+  // A scan over 4 hours old is forgotten when the page is drawn; its read history stays.
+  readHistoryKept: { game: "poe1", seed: "stale", hash: "#/home", async run(t, seed) {
     await ready();
     await clearReads(LEAGUE.poe1);
-    await addRead(LEAGUE.poe1, `${C}>${D}`, [{ ratio: [380, 1], stock: 5 }], null, Date.now());
-    t.eq([$("#remove-expired")?.textContent, !!$("#remove-expired")?.closest(".clear-all")], ["Clear All", true], "Expired: Clear All under the tabs");
-    await click($("#remove-expired"));
-    t.ok(text($("#main .confirm")).startsWith(`This removes 1 expired ratio for ${LEAGUE.poe1}. Are you sure?`), "it asks first", text($("#main .confirm")));
-    await click($("#remove-expired-yes"));
+    await addRead(LEAGUE.poe1, STALE_KEY, [{ ratio: [1, 3.4], stock: 5 }], null, Date.now() - 5 * 3600000);
+    await go("#/market-ratios");
     const left = Object.keys(saved(STORAGE.poe1).leagues[LEAGUE.poe1].ratios);
-    t.eq([left.includes(EXPIRED_KEY), left.length], [false, Object.keys(seed.leagues[LEAGUE.poe1].ratios).length - 1], "only the expired price is gone");
-    t.eq((await historyOf(LEAGUE.poe1)).length, 1, "and keeps the read history");
+    t.eq([left.includes(STALE_KEY), left.length], [false, Object.keys(seed.leagues[LEAGUE.poe1].ratios).length - 1], "only the old price is gone");
+    t.eq((await historyOf(LEAGUE.poe1)).length, 1, "and the read history is kept");
     await clearReads(LEAGUE.poe1);
   } },
 
-  dockedTopLevel: { game: "poe1", seed: "empty", hash: "#/imported-ratios", async run(t, seed, page) {
-    await page.popup("/poe1#/imported-ratios", "/poe1");
+  dockedTopLevel: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t, seed, page) {
+    await page.popup("/poe1#/market-ratios", "/poe1");
     await ready();
     t.ok(w.top === w, "app in a top-level window");
     await click($("#live-import"));

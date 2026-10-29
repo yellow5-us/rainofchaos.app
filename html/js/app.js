@@ -1,17 +1,16 @@
 // Pages and wiring (SPEC.md §4). Hash routes: #/home (the guide; #/ and no hash go there),
-// #/trade-recommendations (Verified tab, Competitive Trading), #/trade-recommendations/expired, each with /available for Instant
-// Trading, #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/imported-ratios
-// (Verified tab), #/imported-ratios/expired.
+// #/trade-recommendations (Competitive Trading), with /available for Instant Trading and /estimated for Estimated Trading,
+// #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/market-ratios.
 import {
-  allResults, drain, FAST, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
-  rowOf, setBought, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
+  allResults, drain, ESTIMATE, estimateRatio, FAST, priceOf, priceSource, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
+  rowOf, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
 } from "./calc.js";
 import {
   catalogNames, currencies, GOLD_ICON, iconUrl, idOfName, isBase, itemOf, itemsIn, nameOf, rowKey, setCatalog,
   setCurrencies, setGold,
 } from "./items.js";
 import {
-  defaultLeague, listedLeagues, loadCatalog, loadGold, loadRates,
+  defaultLeague, latestPrice, listedLeagues, loadCatalog, loadGold, loadRates,
   pairPrices, pairVolume,
   perHourOf, stockOn, usualPrice,
 } from "./rates.js";
@@ -33,23 +32,23 @@ $("#game").addEventListener("change", (e) => {
 
 const main = $("#main");
 let rates = null;
-let pendingRemoveExpired = false;
 let pendingRemoveCompleted = false;
-let query = ""; // search box on the Imported Ratios page
+let query = ""; // search box on the Market Ratios page
 const PAGE_SIZE = 40; // long lists show this many matches at a time
 
 // The game's two views of a pair. Available Trades (default view) = fill orders already on the market;
-// Competing Trades (Alt held) = post your own order at the competitive price. Shown in this order; Competitive is the
-// default.
+// Competing Trades (Alt held) = post your own order at the competitive price. Then Estimated Trading: Competitive, with a
+// pair that has no scan at its estimate (SPEC.md §3.2c). Shown in this order; Competitive is the default.
 const MODES = {
   competitive: { method: SLOW, tab: "Competitive Trading" },
   available: { method: FAST, tab: "Instant Trading" },
+  estimated: { method: SLOW, estimate: true, tab: "Estimated Trading" },
 };
 // What a step's Type selector calls each method.
-const METHOD_NAMES = { [FAST]: "Instant", [SLOW]: "Competitive", [MANUAL]: "Manual" };
+const METHOD_NAMES = { [FAST]: "Instant", [SLOW]: "Competitive", [MANUAL]: "Manual", [ESTIMATE]: "Estimated" };
 const DEFAULT_MODE = "competitive";
 let editLines = null; // [[a, b], ...] ratio lines open in the dialog
-let editingRatio = null; // "listingId|row|side": the Manual listing step's number being typed (side 0 Want, 1 Have)
+let editingManual = null; // "where|rowKey|side": the Manual price's number being typed (side 0 or 1 of the row), and where
 let resortOnClose = false; // a ratio changed: re-sort the item page's routes once the dialog closes or the import window hides
 // Import Market Ratios' state (SPEC.md §4.3, §4.7): { watch } while watching the game (its stream, video, timers and
 // readings), else what its status line says ({ note, warn } or { error }), or {} before anything's happened.
@@ -118,10 +117,13 @@ const blockedTag = (r) => {
 };
 // A route stops at a ratio it has no price for: one never read, or one the game showed with no trades.
 const emptyIn = (r) => !!ratioOf(r.missing)?.empty;
-// What a route missing a price says: which pair, and that the game showed no trades for it, or else `hint` (where to read it).
-const missingText = (r, hint = "") => `<p>${missingTag(r)} ${emptyIn(r) ? "The game showed no trades for" : "Not read from the game yet:"} ${
+// What a route missing a price says: which pair, and that the game showed no trades for it, or else `hint` (where to read
+// it). One missing an estimate too (Estimated Trading) had no scan and no trades lately.
+const missingText = (r, hint = "") => `<p>${missingTag(r)} ${emptyIn(r) ? "The game showed no trades for"
+  : r.estimate ? "Not scanned, and no trades in the last hours:" : "Not read from the game yet:"} ${
   r.missing.split(">").map(iconOnly).join(" : ")}.${emptyIn(r) || !hint ? "" : ` ${hint}`}</p>`;
-const missingTag = (r) => (emptyIn(r) ? noOrdersTag(r.method === FAST) : `<span class="tag warn">not scanned</span>`);
+const missingTag = (r) => (emptyIn(r) ? noOrdersTag(r.method === FAST)
+  : `<span class="tag warn">${r.estimate ? "no estimated price" : "not scanned"}</span>`);
 // Tags in table cells go on their own line under the value they're about, so the values stay lined up.
 const below = (tag) => (tag ? `<div class="tags-below">${tag}</div>` : "");
 // Gold's icon, before its amount as any currency's.
@@ -156,43 +158,48 @@ const tradeItems = () => [...currencies.hubs.filter((h) => h !== baseId()).map(i
 const noOrderRows = () => new Set(rates.leagues[league()]?.noOrders ?? []);
 const matches = (name) => name.toLowerCase().includes(query.trim().toLowerCase());
 
-// A scanned ratio's tag is just how long ago it was read ("<1m", "3m", "2h", "4d"): green (verified) for one read from
-// the game in the last VERIFIED_FOR, then grey (expired), linking to Imported Ratios' Expired tab. The page counts them up
-// every SCAN_TICK and is drawn again when a verified one runs out.
-const VERIFIED_FOR = 60 * 60 * 1000;
+// A scanned ratio's tag is just how long ago it was read ("<1m", "3m", "2h"), green: a scan is used for SCAN_FOR (store.js),
+// then forgotten. The page counts them up every SCAN_TICK and is drawn again when one runs out.
 const SCAN_TICK = 15000;
 // When a scan was read, for hovering over its age or tag: "Oct 9, 2026, 3:04 PM" in the viewer's own format.
 const scanDate = (at) => new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 const age = (at) => {
   const m = Math.floor((Date.now() - at) / 60000);
-  return m < 1 ? "<1m" : m < 60 ? `${m}m` : m < 48 * 60 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+  return m < 1 ? "<1m" : m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`;
 };
-const expiredTag = (at, title = `Scanned ${scanDate(at)}`) =>
-  ` <a class="tag manual" href="#/imported-ratios/expired" title="${esc(title)}" data-scan-at="${at}">${age(at)}</a>`;
 const verifiedTag = (at, title, href = null) => href
   ? ` <a class="tag verified" href="${href}" title="${title}" data-scan-at="${at}">${age(at)}</a>`
   : ` <span class="tag verified" title="${title}" data-scan-at="${at}">${age(at)}</span>`;
+// A price that isn't scanned, at its estimate (SPEC.md §3.2c): muted, outlined. `title` is its hover.
+const ESTIMATE_TITLE = "No scan yet: the average of the last hour's trades. Import Market Ratios reads the real price.";
+const estimateTag = (title = ESTIMATE_TITLE) => ` <span class="tag estimate" title="${title}">estimated</span>`;
 setInterval(() => {
-  let expired = false;
+  let old = false;
   for (const el of document.querySelectorAll("[data-scan-at]")) {
     const at = Number(el.dataset.scanAt);
-    if (el.classList.contains("verified") && Date.now() - at >= VERIFIED_FOR) expired = true;
+    if (Date.now() - at >= store.SCAN_FOR) old = true;
     else el.textContent = age(at);
   }
   // My Listings' waits count down: drawn again unless a box, a dropdown or a window is open.
   const busy = document.activeElement?.matches("select, input") || $("dialog[open]");
-  if (expired || (location.hash.startsWith("#/my-listings") && !busy)) render();
+  if (old || (location.hash.startsWith("#/my-listings") && !busy)) render();
 }, SCAN_TICK);
-const ratioOf = (key) => store.leagueState(league()).ratios[key];
+// A row's scan while it's in use (render drops older ones).
+const ratioOf = (key) => {
+  const r = store.leagueState(league()).ratios[key];
+  return r && Date.now() - r.verifiedAt < store.SCAN_FOR ? r : undefined;
+};
 const isScanned = (key) => !!ratioOf(key);
-const isVerified = (key) => isScanned(key) && Date.now() - ratioOf(key).verifiedAt < VERIFIED_FOR;
-const isExpired = (key) => isScanned(key) && !isVerified(key);
-const lineExpired = ([a, b]) => isExpired(rowKey(a, b)) || isExpired(rowKey(b, a));
-const lineVerified = ([a, b]) => isVerified(rowKey(a, b)) || isVerified(rowKey(b, a));
-// A ratio's tag: verified or expired, else nothing.
-const scanTag = (key, href = null) => (isVerified(key)
-  ? verifiedTag(ratioOf(key).verifiedAt, `Scanned ${scanDate(ratioOf(key).verifiedAt)}`, href)
-  : isExpired(key) ? expiredTag(ratioOf(key).verifiedAt) : "");
+// Just one row's scanned price, as the calculation's `ratios` (a copy of them all, ratios(), is too slow for every cell).
+const scanOf = (key) => ({ [key]: ratioOf(key)?.value });
+// A row's Manual price (SPEC.md §3.2b), or null.
+const manualFor = (key) => store.manualOf(league(), key)?.value ?? null;
+const MANUAL_TITLE = "Your price, typed in";
+const manualTag = () => ` <span class="tag estimate" title="${MANUAL_TITLE}">manual</span>`;
+const lineScanned = ([a, b]) => isScanned(rowKey(a, b)) || isScanned(rowKey(b, a));
+// A ratio's tag: its scan's age, else nothing.
+const scanTag = (key, href = null) => (isScanned(key)
+  ? verifiedTag(ratioOf(key).verifiedAt, `Scanned ${scanDate(ratioOf(key).verifiedAt)}`, href) : "");
 // Every pair among an item and the hubs (vs Chaos, vs Divine, Chaos vs Divine), both ways: every price any of its routes
 // uses (its page's tag).
 const tradeKeys = (id) => {
@@ -200,8 +207,7 @@ const tradeKeys = (id) => {
   return ids.flatMap((a, i) => ids.slice(i + 1).flatMap((b) => [rowKey(a, b), rowKey(b, a)]));
 };
 // The pairs one route trades through, from the starting currency and back, both ways: every price it uses. A route is
-// scanned when all of them are; verified when all of them were read in the last hour (Trade Recommendations' Verified
-// tab), expired when scanned but not verified (its Expired tab).
+// scanned when all of them are (Trade Recommendations' Competitive and Instant Trading); else it's on Estimated Trading.
 const routeKeys = (id, route) => {
   const path = [baseId(), ...route.path(id)];
   return path.slice(1).flatMap((b, i) => [rowKey(path[i], b), rowKey(b, path[i])]);
@@ -221,10 +227,11 @@ const oldestTitle = (keys) => {
   const pair = key.split(">").sort((x, y) => order(x) - order(y));
   return `${pair.map(nameOf).join(":")} at ${scanDate(at)}`;
 };
-// A trade's or route's tag: as old as its oldest price, once every one of them is read.
-const keysTag = (keys) => (keys.every(isVerified) ? verifiedTag(oldestRead(keys).at, esc(oldestTitle(keys)))
-  : keys.every(isScanned) ? expiredTag(oldestRead(keys).at, oldestTitle(keys)) : "");
-const tradeTag = (id) => keysTag(tradeKeys(id));
+// A trade's or route's tag: as old as its oldest price, once every one of them is read; in Estimated Trading (`estimate`),
+// the estimate tag until then.
+const keysTag = (keys, estimate = false) => (keys.every(isScanned) ? verifiedTag(oldestRead(keys).at, esc(oldestTitle(keys)))
+  : estimate ? estimateTag("Some prices are the average of the last hour's trades, not a scan") : "");
+const tradeTag = (id, estimate) => keysTag(tradeKeys(id), estimate);
 
 // ---------- shared pieces ----------
 
@@ -246,35 +253,48 @@ const lineOf = (x, y) => {
 };
 
 // The ratio a step used, want:have, as a button that shows the pair's prices.
-// Beside it, the age of that price's scan: green while verified, grey once expired. A waiting Manual listing step
-// (`manual`, its "listingId|row") was typed in, not scanned: it opens no dialog, both its numbers are shaded, each a box
-// once clicked, and in the scan tag's place its reset puts it back to the Competing price (greyed out while it's that).
+// Beside it, the age of that price's scan, or an Estimate step's estimate tag. A waiting Manual step (`manual`, where it is:
+// a unique name for its row) is at its row's Manual price, typed in: it opens no dialog, both its numbers are shaded, each a
+// box once clicked (what's typed is the row's Manual price, wherever it shows), and in the scan tag's place its reset sets
+// it to the Competing price, or with none scanned the estimate (greyed out while it's that).
 const stepRow = (s) => rowOf(s.method, s.recv, s.give);
-function manualRatio(s, manual) {
-  const part = (i) => (editingRatio === `${manual}|${i}`
-    ? `<input type="number" min="0" step="any" id="manual-ratio" value="${s.ratio[i]}" aria-label="${i ? "Have" : "Want"}">`
-    : `<button type="button" class="manual-edit" data-manual-edit="${manual}|${i}" title="Change">${num(s.ratio[i])}</button>`);
-  const competing = ratioOf(rowKey(s.recv, s.give))?.value, off = competing && !sameRatio(competing, s.ratio);
-  const reset = `<button type="button" class="reset" data-manual-reset="${manual}"${off ? "" : " disabled"}
-    title="${competing ? "Back to the Competing price" : "No Competing price scanned"}">reset</button>`;
-  return `<span class="manual-ratio">${part(0)}${unit(s.recv)} : ${part(1)}${unit(s.give)}${reset}</span>`;
+// Where a Manual price's reset goes: the Competing price scanned, else the estimate.
+const resetRatio = (recv, give) => priceOf(scanOf(rowKey(recv, give)), "estimated", recv, give);
+// A Manual price's two numbers, shaded, each a box while it's being typed (editingManual), for row `key` showing `v`
+// (`shown(i)` its numbers' text), at `where`; and its reset.
+const manualPart = (where, key, v, i, shown = (n) => num(v[n])) => (editingManual === `${where}|${key}|${i}`
+  ? `<input type="number" min="0" step="any" id="manual-ratio" value="${v[i]}" aria-label="${esc(nameOf(key.split(">")[i]))}">`
+  : `<button type="button" class="manual-edit" data-manual-edit="${where}|${key}|${i}" title="Change">${shown(i)}</button>`);
+function manualReset(key, v) {
+  const [x, y] = key.split(">"), scanned = ratioOf(key)?.value, back = resetRatio(x, y), off = back && !sameRatio(back, v);
+  return `<button type="button" class="reset" data-manual-reset="${key}"${off ? "" : " disabled"}
+    title="${scanned ? "Back to the Competing price" : back ? "Back to the estimated price" : "No Competing price scanned"}">reset</button>`;
+}
+function manualRatio(s, where) {
+  const key = rowKey(s.recv, s.give);
+  return `<span class="manual-ratio">${manualPart(where, key, s.ratio, 0)}${unit(s.recv)} : ${manualPart(where, key, s.ratio, 1)}${unit(s.give)}${
+    manualReset(key, s.ratio)}</span>`;
 }
 const ratioCellFor = (s, manual) => `<td>${manual ? manualRatio(s, manual) : `<button class="ratio-link" data-pair="${lineOf(s.recv, s.give).join("|")}"
-  title="Show this pair's prices">${num(s.ratio[0])}${unit(s.recv)} : ${num(s.ratio[1])}${unit(s.give)}</button>${scanTag(stepRow(s))}`}${
+  title="Show this pair's prices">${num(s.ratio[0])}${unit(s.recv)} : ${num(s.ratio[1])}${unit(s.give)}</button>${
+    s.method === ESTIMATE ? estimateTag() : scanTag(stepRow(s))}`}${
   below(s.noOrders ? noOrdersTag(s.method === FAST) : s.thin ? thinTag(s) : s.rounded ? ROUNDED_TAG : "")}</td>`;
 // A price whose smallest exact lot is over the 999,999 limit is traded in rounded whole-number orders (SPEC.md §3.2).
 const ROUNDED_TAG = `<span class="tag manual" title="The smallest exact trade at this price is over the exchange's ${num(MAX_ORDER)} limit, so the orders are rounded to whole numbers, a little in the other side's favour, so they always go through">rounded</span>`;
 
-// Per-row choice of Competitive or Instant (the tabs' order). Overrides last for the session, per item and mode,
+// Per-row choice of Competitive, Instant or Manual (the tabs' order, then Manual). Overrides last for the session, per item and mode,
 // until one of the item page's tabs is clicked: that puts every step back to the tab's type.
 const stepMethods = {}; // "itemId|mode|base" -> { routeId: { stepKey: method } }
 const methodsFor = (itemId, mode) => (stepMethods[`${itemId}|${mode}|${baseId()}`] ??= {});
 const resetMethods = (itemId) => Object.keys(stepMethods).filter((k) => k.startsWith(`${itemId}|`)).forEach((k) => delete stepMethods[k]);
 
-// `data` is the select's data attribute (data-step="…"), which the change handler reads. Listings' waiting steps add Manual.
-const methodSelect = (data, method, choices = [SLOW, FAST]) => `<select class="method" ${data} aria-label="Trade type">${choices.map((m) =>
+// `data` is the select's data attributes (data-step="…", the step's row and ratio), which the change handler reads.
+// A step with no Competing price scanned (an Estimate step, or Manual there) has only Estimate and Manual.
+const typeChoices = (s) => (s.method === ESTIMATE || (s.method === MANUAL && !isScanned(rowKey(s.recv, s.give))) ? [ESTIMATE, MANUAL] : [SLOW, FAST, MANUAL]);
+const stepData = (s) => `data-key="${rowKey(s.recv, s.give)}" data-ratio="${s.ratio.join(":")}"`;
+const methodSelect = (data, method, choices) => `<select class="method" ${data} aria-label="Trade type">${choices.map((m) =>
   `<option value="${m}" ${method === m ? "selected" : ""}>${METHOD_NAMES[m]}</option>`).join("")}</select>`;
-const methodCell = (s) => `<td>${methodSelect(`data-step="${s.routeId}|${s.key}"`, s.method)}</td>`;
+const methodCell = (s) => `<td>${methodSelect(`data-step="${s.routeId}|${s.key}" ${stepData(s)}`, s.method, typeChoices(s))}</td>`;
 
 // A step's gold for `orders`: the fee of the currency it receives.
 const goldCell = (s, orders) => `<td class="num gold">${goldAmount(goldCost(s.recv, orders))}</td>`;
@@ -289,7 +309,9 @@ const stepProblem = (s) => s.noOrders || s.thin || s.tooBig || (!s.lots && s.hav
 // `bad`: this step has a problem (stepProblem), so its row is shaded red.
 // `cells` (a listing's, SPEC.md §4.6) can replace a step's Fill Time (`fill`) and Type (`trades`) cell
 // contents and its Want and Have amounts (`amount`, given "want" or "have" and the usual HTML; null for the usual), add
-// a cell at the end (`extra`), and name a Manual step whose ratio can be typed (`manual`).
+// a cell at the end (`extra`), and name where a Manual step whose ratio can be typed is (`manual`; on item pages, every
+// Manual step).
+const manualWhere = (s, cells) => (cells.manual ? cells.manual(s) : s.method === MANUAL ? `${s.routeId}-${s.index}` : null);
 function stepRows(s, n, { bad = false } = {}, cells = {}) {
   const fillOf = (x) => cells.fill?.(s) ?? x;
   const tradesTd = () => (cells.trades ? `<td>${cells.trades(s)}</td>` : methodCell(s));
@@ -312,7 +334,7 @@ function stepRows(s, n, { bad = false } = {}, cells = {}) {
       <td>${label}</td>
       <td>${amount(lot.received, s.recv)}</td>
       <td>${amount(lot.given, s.give)}${below(tag)}</td>
-      ${ratioCellFor(s, cells.manual?.(s))}
+      ${ratioCellFor(s, manualWhere(s, cells))}
       <td class="num">${fillOf("—")}</td>
       ${goldCell(s, [lot])}${tradesTd()}${extra}
     </tr>`;
@@ -325,7 +347,7 @@ function stepRows(s, n, { bad = false } = {}, cells = {}) {
       <td>${i === 0 ? label : `<span class="ghost" aria-hidden="true">${label}</span>`}${split ? " " : ""}${split}</td>
       <td>${amount(o.received, s.recv)}</td>
       <td>${amount(o.given, s.give)}</td>
-      ${i === 0 ? ratioCellFor(s, cells.manual?.(s)) : "<td></td>"}
+      ${i === 0 ? ratioCellFor(s, manualWhere(s, cells)) : "<td></td>"}
       <td class="num"${i === 0 ? fillTitle(s) : ""}>${i === 0 ? fillOf(fillTime(s.fillHours)) : ""}</td>
       ${goldCell(s, [o])}
       ${i === 0 ? tradesTd() + extra : `<td></td>${extra ? "<td></td>" : ""}`}
@@ -350,25 +372,25 @@ function stepsHtml(r, cells = {}) {
 
 // A ratio as read from the game, with the decimals it showed (8.30 stays 8.30), in six cells so every row's parts line
 // up: icon, number, colon, number, icon (the numbers hugging the colon, the icons their numbers), then `tags`. A price
-// not read shows `empty` across the middle three.
+// not read shows "no trades" (read empty) or `none` across the middle three.
 const decimalsOf = (v) => (String(v).split(".")[1] ?? "").length;
 const fixed = (v, d) => (v === "" || v == null ? "" : Number(v).toFixed(d));
-function ratioCells(a, b, key, flip, tags = "") {
-  const r = ratioOf(key), v = r?.value, empty = r?.empty ? "no trades" : "not scanned";
+function ratioCells(a, b, key, flip, tags = "", none = "not scanned") {
+  const r = ratioOf(key), v = r?.value, empty = r?.empty ? "no trades" : none;
   const side = (i) => fixed(v[i], r.digits?.[i] ?? decimalsOf(v[i]));
   const middle = v ? `<td class="r-num r-end">${side(flip ? 1 : 0)}</td><td class="r-colon">:</td><td class="r-num">${side(flip ? 0 : 1)}</td>`
     : `<td class="r-none muted" colspan="3">${empty}</td>`;
   return `<td class="r-icon r-end">${iconOnly(a)}</td>${middle}<td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tags}</td>`;
 }
 // The Available column (flip) reads row B:A, the Competing one row A:B; either may have no orders. Only the dialog says
-// so (it's opened from the trade pages); Imported Ratios doesn't need it.
+// so (it's opened from the trade pages); Market Ratios doesn't need it.
 const ratioCell = (a, b, key, flip, withNoOrders) =>
-  ratioCells(a, b, key, flip, `${scanTag(key, "#/imported-ratios")}${withNoOrders && noOrderRows().has(key) ? below(noOrdersTag(flip)) : ""}`);
+  ratioCells(a, b, key, flip, `${scanTag(key, "#/market-ratios")}${withNoOrders && noOrderRows().has(key) ? below(noOrdersTag(flip)) : ""}`);
 
 // The game shows a pair as "A : B" both ways. By default it's "Available Trades", the orders already on
 // the other side: internal row B:A, so it's drawn flipped. Holding Alt shows "Competing Trades", the
 // price you'd post at: internal row A:B. Example: Chaos 371 : 1 Divine available, 380 : 1 competing.
-// Imported Ratios' columns after the prices: Wait, how long the orders already at the Competing price take to fill at the
+// Market Ratios' columns after the prices: Wait, how long the orders already at the Competing price take to fill at the
 // pair's recent pace less its undercutting (the queue a new order joins, SPEC.md §3.6; blank without its stock); Spread,
 // how far apart the Available and Competing prices are; and how much traded last hour.
 function waitCell(a, b) {
@@ -381,23 +403,52 @@ function spreadCell(a, b) {
   const spread = av && co ? Math.abs((co[0] / co[1]) / (av[1] / av[0]) - 1) * 100 : null;
   return `<td class="num spread">${spread == null ? "" : `${spread.toFixed(1)}%`}</td>`;
 }
-const ratioLine = ([a, b], withStats, withNoOrders = false) => {
+// A price as Estimated Trading uses it (`kind` "estimated": the scan, else the estimate) or as the Manual tab and the price
+// window show it ("manual": its Manual price, then the same), with its tag (SPEC.md §4.3). `edit` (the price window, §4.2)
+// shades its two numbers, each a box once clicked, setting the row's Manual price, and a Manual price has its reset. With
+// none of them, as anywhere else.
+function shownCells(a, b, key, flip, kind, edit = false) {
+  const price = priceSource(scanOf(key), kind, ...key.split(">"));
+  if (!price) return ratioCells(a, b, key, flip, "", "no estimated price");
+  const v = price.value, digits = price.from === "scan" ? ratioOf(key).digits : null;
+  const shown = (i) => fixed(v[i], digits?.[i] ?? decimalsOf(v[i]));
+  const part = (i) => (edit ? manualPart("dlg", key, v, i, shown) : shown(i));
+  const tag = price.from === "manual" ? manualTag() + (edit ? ` ${manualReset(key, v)}` : "") : price.from === "scan" ? scanTag(key) : estimateTag();
+  const [l, r] = flip ? [1, 0] : [0, 1];
+  return `<td class="r-icon r-end">${iconOnly(a)}</td><td class="r-num r-end">${part(l)}</td><td class="r-colon">:</td><td class="r-num">${
+    part(r)}</td><td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tag}</td>`;
+}
+// One line of a pair's prices: as scanned, or as `kind` shows them (shownCells: "estimated", "manual"). Market Ratios'
+// Competitive and Instant tabs (`kind` "competitive", "available") show only that column, scanned.
+const ratioLine = ([a, b], withStats, withNoOrders = false, kind = null, edit = false) => {
   const v = withStats && pairVolume(rates.leagues[league()], a, b);
-  const stats = withStats ? `${waitCell(a, b)}${spreadCell(a, b)}<td class="vol muted">${qty(v?.[0] ?? 0, a)} ⇄ ${qty(v?.[1] ?? 0, b)}</td>` : "";
-  return `<tr>${ratioCell(a, b, rowKey(b, a), true, withNoOrders)}${ratioCell(a, b, rowKey(a, b), false, withNoOrders)}${stats}</tr>`;
+  const vol = `<td class="vol muted">${qty(v?.[0] ?? 0, a)} ⇄ ${qty(v?.[1] ?? 0, b)}</td>`;
+  if (kind === "competitive") return `<tr>${ratioCell(a, b, rowKey(a, b), false, withNoOrders)}${waitCell(a, b)}${vol}</tr>`;
+  if (kind === "available") return `<tr>${ratioCell(a, b, rowKey(b, a), true, withNoOrders)}${vol}</tr>`;
+  const stats = withStats ? `${waitCell(a, b)}${spreadCell(a, b)}${vol}` : "";
+  const cell = (key, flip) => (kind ? shownCells(a, b, key, flip, kind, edit) : ratioCell(a, b, key, flip, withNoOrders));
+  return `<tr>${cell(rowKey(b, a), true)}${cell(rowKey(a, b), false)}${stats}</tr>`;
 };
 
 // Groups of lines, each under its own heading, e.g. one group per item (vs Chaos, vs Divine).
-const ratioTable = (groups) => `<div class="scroll"><table class="ratios">
-  <thead><tr><th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th>
-    <th class="num" title="How long the Competing orders already at that price take to fill">Wait</th>
-    <th class="num" title="How far apart the Available and Competing prices are">Spread</th><th class="vol">Traded last hour</th></tr></thead>
-  ${groups.map((g) => `<tbody data-row="${g.id ?? "hubs"}"><tr class="group"><th colspan="15"><div class="group-head">
+const WAIT_TH = `<th class="num" title="How long the Competing orders already at that price take to fill">Wait</th>`;
+const RATIO_HEADS = {
+  competitive: [`<th colspan="6">Competing Trades</th>${WAIT_TH}`, 8],
+  available: [`<th colspan="6">Available Trades</th>`, 7],
+  both: [`<th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th>${WAIT_TH}
+    <th class="num" title="How far apart the Available and Competing prices are">Spread</th>`, 15],
+};
+const ratioTable = (groups, kind = "both") => {
+  const [heads, cols] = RATIO_HEADS[kind] ?? RATIO_HEADS.both;
+  return `<div class="scroll"><table class="ratios">
+  <thead><tr>${heads}<th class="vol">Traded last hour</th></tr></thead>
+  ${groups.map((g) => `<tbody data-row="${g.id ?? "hubs"}"><tr class="group"><th colspan="${cols}"><div class="group-head">
     <span>${g.id // a currency's name opens its page in Available Trades; the hubs' block has none
       ? `<a href="#/item/${g.id}/available" title="Open in Available Trades">${icon(g.id)}${esc(g.title)}</a>`
       : esc(g.title)}</span>
-  </div></th></tr>${g.lines.map((line) => ratioLine(line, true)).join("")}</tbody>`).join("")}
+  </div></th></tr>${g.lines.map((line) => ratioLine(line, true, false, kind === "both" ? null : kind)).join("")}</tbody>`).join("")}
 </table></div>`;
+};
 
 // The hubs against each other (PoE1: Chaos ↔ Divine), then one block per item with a line per hub.
 const hubGroup = () => ({
@@ -410,7 +461,7 @@ const itemGroup = (item) => ({ id: item.id, title: item.name, lines: currencies.
 const searchBox = (placeholder) =>
   `<p><input type="search" id="search" placeholder="${placeholder}" value="${esc(query)}" autocomplete="off"></p>`;
 
-// Pagination for the Imported Ratios list: PAGE_SIZE rows per page. The page resets when the
+// Pagination for the Market Ratios list: PAGE_SIZE rows per page. The page resets when the
 // search changes or you navigate away.
 let pageNo = 1;
 // Trade Recommendations' tables opened or closed by hand, by key; kept while on that page. Only Profitable starts open.
@@ -482,41 +533,30 @@ function startControls() {
     <span class="base-toggle" role="group" aria-label="Currency to start with">${buttons}</span></span></div>`;
 }
 
-// Competitive / Instant tabs, styled like Imported Ratios'. `href(mode)` is each tab's address.
+// Competitive / Instant tabs, styled like Market Ratios'. `href(mode)` is each tab's address.
 const modeTabs = (mode, href, itemId) => `<div class="tabs">${Object.entries(MODES)
   .map(([m, md]) => `<a href="${href(m)}" class="${m === mode ? "active" : ""}" data-reset-steps="${itemId}">${md.tab}</a>`).join("")}</div>`;
-// Trade Recommendations' tabs: Verified (#/trade-recommendations, the default: trades verified end to end) and Expired
-// (#/trade-recommendations/expired: every price scanned, some over an hour ago). A trade with a price never scanned is in
-// neither. Each picks Competitive or Instant Trading with its own selector (/available). The tab last
-// shown is where item pages lead back to.
-const EXCHANGE_TABS = ["verified", "expired"];
-let exchangeTab = EXCHANGE_TABS[0];
-const exchangeHref = (m, t = exchangeTab) =>
-  `#/trade-recommendations${t === EXCHANGE_TABS[0] ? "" : `/${t}`}${m === DEFAULT_MODE ? "" : `/${m}`}`;
-// Competitive / Instant Trading as a selector (links), like the starting currency's.
+// Competitive / Instant / Estimated Trading as a selector (links), like the starting currency's. Competitive and Instant list
+// the routes whose prices are all scanned; Estimated, the rest. The mode last shown is where item pages lead back to.
+const exchangeHref = (m) => `#/trade-recommendations${m === DEFAULT_MODE ? "" : `/${m}`}`;
 const modeToggle = (mode) => `<p class="mode-pick"><span class="mode-toggle" role="group" aria-label="Trading">${Object.entries(MODES)
   .map(([m, md]) => `<a href="${exchangeHref(m)}" class="${m === mode ? "active" : ""}"${m === mode ? ' aria-current="page"' : ""}>${md.tab}</a>`).join("")}</span></p>`;
 
-// After "nothing verified" (Trade Recommendations, Imported Ratios): a link that opens the header's import window.
+// After "nothing scanned" (Trade Recommendations, Market Ratios): a link that opens the header's import window.
 const importHint = () => `Use <a href="#" data-import>Import Market Ratios</a> at the top right to read them from the game.`;
 
-// Trade Recommendations: the starting amount, the tabs, the Competitive / Instant selector, then the tables.
-function summaryPage(tab, mode) {
-  exchangeTab = tab;
-  const { method } = MODES[mode];
-  // Every route of every item, each on its own row (SPEC.md §4.1), on its tab: Verified (every price it uses read in the
-  // last hour), Expired (every one read, some over an hour ago), or neither. Each tab's count is its rows (the search
-  // doesn't change it, as on Imported Ratios). Routes the starting amount can't afford aren't listed.
-  const now = ratios(), byTab = { verified: [], expired: [] };
+// Trade Recommendations: the starting amount, the Competitive / Instant / Estimated selector, then the tables.
+function summaryPage(mode) {
+  const { method, estimate = false } = MODES[mode];
+  // Every route of every item, each on its own row (SPEC.md §4.1): in Competitive and Instant Trading the routes whose every
+  // price is scanned, in Estimated Trading the others. Routes the starting amount can't afford aren't listed.
+  const now = ratios(), all = [];
   for (const item of tradeItems()) {
-    for (const result of allResults(now, item.id, start(), method, {}, baseId())) {
+    for (const result of allResults(now, item.id, start(), method, {}, baseId(), estimate)) {
       const keys = routeKeys(item.id, result.route);
-      const t = keys.every(isVerified) ? "verified" : keys.every(isScanned) ? "expired" : null;
-      if (t) byTab[t].push({ item, result, key: `${item.id}|${result.route.id}`, tag: keysTag(keys).trim() });
+      if (keys.every(isScanned) !== estimate) all.push({ item, result, key: `${item.id}|${result.route.id}`, tag: keysTag(keys, estimate).trim() });
     }
   }
-  const counts = Object.fromEntries(EXCHANGE_TABS.map((t) => [t, byTab[t].length]));
-  const all = byTab[tab];
   const rows = all.filter((r) => matches(r.item.name));
   sortRows(rows); // every table uses the chosen sort
 
@@ -546,23 +586,19 @@ function summaryPage(tab, mode) {
     ? `<details class="section" data-section="${key}"${sectionOpen(key) ? " open" : ""}>
       <summary><h2>${title} <span class="muted">(${num(list.length)})</span></h2></summary>
       ${!sectionOpen(key) ? "" : list.length ? table(list) : `<p class="muted">${empty}</p>`}</details>` : "");
-  // Untradeable: an Instant trade has nothing, or too little, on offer to fill, or the route isn't scanned.
+  // Untradeable: an Instant trade has nothing, or too little, on offer to fill, or a price is missing.
   const untradeable = (r) => r.result.missing || r.result.blocked;
   const good = rows.filter((r) => profitable(r.result));
   const blocked = rows.filter(untradeable);
   const losing = rows.filter((r) => !profitable(r.result) && !untradeable(r));
 
-  const tabRow = `<div class="tabs">${EXCHANGE_TABS.map((t) =>
-    `<a href="${exchangeHref(mode, t)}" class="${t === tab ? "active" : ""}">${t === "verified" ? "Verified" : "Expired"} (${num(counts[t])})</a>`).join("")}</div>`;
   if (!all.length) {
     return `${startControls()}
-    ${tabRow}
     ${modeToggle(mode)}
-    ${tab === "verified" ? `<p class="muted">No trades have been verified for ${esc(league())} in the last hour. ${importHint()}</p>`
-      : `<p class="muted">No trades have expired for ${esc(league())}.</p>`}`;
+    <p class="muted">${estimate ? `Every trade for ${esc(league())} is scanned.`
+      : `No trades have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`}</p>`;
   }
   return `${startControls()}
-    ${tabRow}
     ${modeToggle(mode)}
     ${searchBox("Search items")}
     ${section("profitable", "Profitable", good, { empty: `None${query ? " matching" : " right now"}.` })}
@@ -598,7 +634,7 @@ const routeFold = new Map();
 const routeOpen = new Set();
 
 function itemPage(slug, mode) {
-  const { method } = MODES[mode];
+  const { method, estimate = false } = MODES[mode];
   const item = slug ? itemOf(slug) : null;
   if (!item) return `<h1>Not found</h1><p><a href="${exchangeHref(mode)}">Back to Trade Recommendations</a></p>`;
   // The start currency isn't traded for itself (SPEC.md §4.2): pick another to start with.
@@ -609,7 +645,9 @@ function itemPage(slug, mode) {
     <p class="muted">${esc(hubName(item.id))} is your starting currency, so it has no routes. Start with another currency to see them.</p>`;
   }
   const orderKey = `${item.id}|${mode}|${baseId()}`;
-  const current = byPerMinute(allResults(ratios(), item.id, start(), method, methodsFor(item.id, mode), baseId()));
+  // Estimated Trading has the routes not every price of which is scanned (the others are on Competitive and Instant).
+  const current = byPerMinute(allResults(ratios(), item.id, start(), method, methodsFor(item.id, mode), baseId(), estimate)
+    .filter((r) => !estimate || !routeKeys(item.id, r.route).every(isScanned)));
   // An edit can change which routes are left (one the starting amount can't afford isn't offered), so a kept order
   // that no longer matches is worked out again.
   const kept = routeOrder.get(orderKey);
@@ -650,9 +688,11 @@ function itemPage(slug, mode) {
 
   return `${startControls()}
     <p class="back"><a href="${exchangeHref(mode)}">← Back to Trade Recommendations</a></p>
-    <h1>${titled(item.id)}${tradeTag(item.id)} <span class="muted item-volume">${volumeHtml(item.id)} traded last hour</span></h1>
+    <h1>${titled(item.id)}${tradeTag(item.id, estimate)} <span class="muted item-volume">${volumeHtml(item.id)} traded last hour</span></h1>
     ${modeTabs(mode, (m) => `#/item/${slug}/${m}`, item.id)}
-    ${results.length ? results.map(box).join("") : `<p class="muted">Not enough starting ${esc(hubName(baseId()))}</p>`}
+    ${results.length ? results.map(box).join("")
+      : estimate && tradeKeys(item.id).every(isScanned) ? `<p class="muted">Every trade of ${esc(item.name)} is scanned: see Competitive and Instant Trading.</p>`
+      : `<p class="muted">Not enough starting ${esc(hubName(baseId()))}</p>`}
 `;
 }
 
@@ -677,8 +717,7 @@ const pathKeys = (l) => {
 // traded, then a row of its own after it (`repost`) posting what was left (`left`, of the same Have) again, the same way.
 // legOf(l, i) is the route step row i trades, methodOf how it's traded.
 const legOf = (l, i) => l.steps.slice(0, i + 1).filter((st) => !st.repost).length - 1;
-// A step's choice is a method, or a Manual step's { method: MANUAL, ratio } (want:have); stepSlot is where it's kept. A price
-// typed into a Manual step is kept as `typed` too, on whatever Type is picked after, so picking Manual again brings it back.
+// A step's choice is a method; stepSlot is where it's kept.
 const stepSlot = (l, i) => (l.steps[i].repost ? [l.steps[i], "method"] : [l.methods, legOf(l, i)]);
 const methodOf = (l, i) => l.steps[i].method ?? l.methods[legOf(l, i)];
 // The next step to start or complete: the first that isn't done (the steps' length when all are).
@@ -735,8 +774,10 @@ function listingResult(l) {
   const path = pathOf(l);
   // A repost waiting to start trades what was left at the latest price.
   const reposted = (st, i) => {
-    const k = legOf(l, i), m = methodOf(l, i), t = leg(ratios(), m.method ?? m, path[k + 1], path[k], st.left, m.ratio);
-    return t.missing ? t : { ...t, method: m.method ?? m };
+    const k = legOf(l, i), now = ratios();
+    let method = methodOf(l, i), t = leg(now, method, path[k + 1], path[k], st.left);
+    if (t.missing) [t, method] = [leg(now, ESTIMATE, path[k + 1], path[k], st.left), ESTIMATE];
+    return t.missing ? t : { ...t, method };
   };
   const rows = l.steps.map((st, i) => (st.state === "done" ? kept(st.fixed, 0) : st.state === "progress" ? kept(st.fixed, startedFill(l, i))
     : st.repost ? reposted(st, i) : undefined));
@@ -751,7 +792,8 @@ function listingResult(l) {
   });
   // A started or done step's extra is what the step before it bought and it didn't spend, as for any step (§3.3).
   for (const [i, f] of fixed.entries()) if (i > 0 && f && fixed[i - 1]) fixed[i] = { ...f, extra: fixed[i - 1].received - f.given };
-  const r = runRoute(ratios(), l.item, routeOf(l), MODES[l.mode].method, l.start, perStep, l.base, fixed);
+  // A waiting step with no price scanned is an Estimate step, whatever Type it was given (SPEC.md §4.6).
+  const r = runRoute(ratios(), l.item, routeOf(l), MODES[l.mode].method, l.start, perStep, l.base, fixed, true);
   if (r.missing) return r;
   // Each row's own line: a route step's trade as worked out, or with several rows, each row's part of it.
   const lines = l.steps.map((st, i) => {
@@ -777,7 +819,7 @@ function queueAt(s) {
 const SEEN = [0.95, 1.05], SEEN_GAP = 20 * 60 * 1000;
 function orderSeenAt(l, i, s) {
   const st = l.steps[i];
-  if (l.completed || st.state !== "waiting" || st.noHint || i !== nextStep(l) || !s?.lots || s.method === FAST) return null;
+  if (l.completed || st.state !== "waiting" || st.noHint || i !== nextStep(l) || !s?.lots || s.method === FAST || s.method === ESTIMATE) return null;
   const since = i === 0 ? l.added : l.steps[i - 1].doneAt ?? l.added;
   const reads = store.readsOf(league(), rowKey(s.recv, s.give));
   // The stock at its price in a read; 0 where its price would be among those shown, null below them.
@@ -805,7 +847,7 @@ function playStep(l, i, at = Date.now()) {
   const repost = st.repost ? { repost: true, left: st.left, method: st.method } : {};
   if (st.state === "progress") {
     l.steps[i] = { state: "waiting", ...repost };
-  } else if (st.state === "waiting" && i === nextStep(l) && s?.lots) {
+  } else if (st.state === "waiting" && i === nextStep(l) && s?.lots && s.method !== ESTIMATE) {
     l.steps[i] = { state: "progress", at, fixed: freeze(s), fillAtStart: s.fillHours, queue: queueAt(s),
       pace: paceOf(league(), s.recv, s.give), bought: s.bought ?? null, undercut: s.undercut ?? null, ahead: s.ahead ?? 0, ...repost };
   } else {
@@ -878,14 +920,17 @@ function uncancel(l, i) {
   delete st.whole;
 }
 
+const ESTIMATE_NOTE = "Set its Type to Manual and type the price the game shows first";
 const CHECK_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const PLAY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></svg>`;
 const CANCEL_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5" fill="currentColor"/></svg>`; // stop: the order taken down
 // A step's play button, cancel and check, in the order they happen, each an outline until it's on: play filled in green
 // once the step is started (or done), the check blue once it's done. The cancel is for the started step (its order taken
-// down partway), and for a repost waiting to start (undoing the cancel). Each is disabled where it can't be clicked.
-function stepButtons(l, i) {
+// down partway), and for a repost waiting to start (undoing the cancel). Each is disabled where it can't be clicked. An
+// Estimate step (`estimate`) has none: it has no price to post at until it's Manual or scanned, and says so instead.
+function stepButtons(l, i, estimate = false) {
   const st = l.steps[i], k = nextStep(l);
+  if (estimate && st.state === "waiting") return `<span class="estimate-note" title="${ESTIMATE_NOTE}">Cannot trade</span>`;
   const btn = (kind, on, can, title, iconSvg) => `<button type="button" class="step-check${on ? " on" : ""}" data-listing-${kind}="${l.id}|${i}"
     title="${title}" aria-label="${title}" aria-pressed="${on}"${can ? "" : " disabled"}>${iconSvg}</button>`;
   const started = st.state !== "waiting", done = st.state === "done", undo = done && i === lastDone(l);
@@ -947,18 +992,19 @@ function listingBox(l) {
       const st = l.steps[s.index];
       return st.state !== "done" ? null : `<span title="How long it took">${took((st.doneAt - postedAt(l, s.index)) / 3600000)}</span>`;
     },
-    // A waiting step can change how it's traded; a started or done step says how it is.
+    // A waiting step can change how it's traded: with no Competing price scanned (an Estimate step's), only Estimate or
+    // Manual; a started or done step says how it is.
     trades: (s) => (l.steps[s.index].state === "waiting"
-      ? methodSelect(`data-listing-step="${l.id}|${s.index}" data-ratio="${s.ratio.join(":")}"`, s.method, [SLOW, FAST, MANUAL])
+      ? methodSelect(`data-listing-step="${l.id}|${s.index}" ${stepData(s)}`, s.method, typeChoices(s))
       : METHOD_NAMES[s.method]),
     // A waiting Manual step's ratio is typed in its cell.
-    manual: (s) => (l.steps[s.index].state === "waiting" && s.method === MANUAL ? `${l.id}|${s.index}` : null),
+    manual: (s) => (l.steps[s.index].state === "waiting" && s.method === MANUAL ? `${l.id}-${s.index}` : null),
     // A cancelled step shows its whole order, as posted, and after its Have how much of it filled: "[div]25 (1 filled)".
     amount: (s, side, copy) => {
       const st = l.steps[s.index];
       return st.whole && side === "have" ? `${copy} <span class="filled">(${num(s.given)} filled)</span>` : null;
     },
-    extra: l.completed ? null : (s) => stepButtons(l, s.index),
+    extra: l.completed ? null : (s) => stepButtons(l, s.index, s.method === ESTIMATE),
     // Under the next step, when a scan seems to show its order up: Yes starts it from that scan, No hides it for good.
     after: (s) => {
       const seen = orderSeenAt(l, s.index, s), id = `${l.id}|${s.index}`;
@@ -975,12 +1021,12 @@ function listingBox(l) {
 const confirmBox = (text, id) => `<div class="confirm">${text} Are you sure?
   <div class="choices"><button id="${id}-yes" class="destructive">Yes</button><button id="${id}-cancel">Cancel</button></div></div>`;
 
-// A tab's Clear All (My Listings' Completed, Imported Ratios' Expired), under the tabs at the left: red, disabled with
+// A tab's Clear All (My Listings' Completed), under the tabs at the left: red, disabled with
 // nothing to clear, asking first ("This removes 3 completed listings for Allflame. Are you sure?"). `id` names its buttons.
 const clearAll = (id, asking, n, what) => `<p class="clear-all"><button id="${id}" class="destructive"${n ? "" : " disabled"}>Clear All</button></p>
   ${asking ? confirmBox(`This removes ${n} ${what} for ${esc(league())}.`, id) : ""}`;
 
-// My Listings (SPEC.md §4.6): Active (#/my-listings) and Completed (#/my-listings/completed), as Trade Recommendations' Verified and Expired.
+// My Listings (SPEC.md §4.6): Active (#/my-listings) and Completed (#/my-listings/completed).
 function listingsPage(completed) {
   const tab = (c) => `<a href="#/my-listings${c ? "/completed" : ""}" class="${c === completed ? "active" : ""}">${c ? "Completed" : "Active"} (${num(leagueListings(c).length)})</a>`;
   const list = leagueListings(completed).sort((a, b) => b.added - a.added);
@@ -999,13 +1045,16 @@ function addListingFoot(item, r) {
     <button type="button" data-add-listing="${r.route.id}">Add to My Listings</button></div>`;
 }
 function addListing(item, mode, routeId) {
-  const r = allResults(ratios(), item.id, start(), MODES[mode].method, methodsFor(item.id, mode), baseId()).find((x) => x.route.id === routeId);
+  const { method, estimate = false } = MODES[mode];
+  const r = allResults(ratios(), item.id, start(), method, methodsFor(item.id, mode), baseId(), estimate)
+    .find((x) => x.route.id === routeId);
   if (!r || r.missing) return;
   listings().push({
     id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, league: league(), item: item.id, routeId,
     base: baseId(), start: start(), mode, added: Date.now(), completed: false,
     expected: { gain: r.gain, leftovers: r.leftovers, rank: r.rank },
-    methods: r.steps.map((s) => s.method), steps: r.steps.map(() => ({ state: "waiting" })),
+    // An Estimate step is Competitive once its pair is scanned.
+    methods: r.steps.map((s) => (s.method === ESTIMATE ? SLOW : s.method)), steps: r.steps.map(() => ({ state: "waiting" })),
   });
   store.save();
 }
@@ -1017,40 +1066,40 @@ const tabs = (page, modified, onlyModified) => {
   return `<div class="tabs">${tab(`#/${page}`, `Modified (${modified})`, onlyModified)}${tab(`#/${page}/all`, "All", !onlyModified)}</div>`;
 };
 
-// Imported Ratios' tabs: Verified (#/imported-ratios, the default: currencies with
-// a ratio read from the game in the last hour), Expired (#/imported-ratios/expired: read over an hour ago), each with
-// search and paging, both lists showing every line of a currency (vs Chaos and vs Divine) even if only one is of that
-// kind.
-const RATES_VIEWS = ["verified", "expired"];
-const ratesView = (arg) => (RATES_VIEWS.includes(arg) ? arg : RATES_VIEWS[0]);
-function ratesPage(view) {
-  const expired = store.expiredCount(league(), Date.now() - VERIFIED_FOR);
-  const test = { verified: lineVerified, expired: lineExpired };
-  const has = (v) => (g) => g.lines.some(test[v]);
-  // Each tab counts currencies (Chaos ↔ Divine as one), like its list and paging, not ratios.
-  const count = (v) => items().map(itemGroup).filter(has(v)).length + (has(v)(hubGroup()) ? 1 : 0);
-  const href = (v) => (v === RATES_VIEWS[0] ? "#/imported-ratios" : `#/imported-ratios/${v}`);
-  const label = (v) => `${v === "verified" ? "Verified" : "Expired"} (${count(v)})`;
-  const tabRow = `<div class="tabs">${RATES_VIEWS.map((v) => `<a href="${href(v)}" class="${v === view ? "active" : ""}">${label(v)}</a>`).join("")}</div>`;
-  return `${tabRow}
-    ${view === "expired" ? clearAll("remove-expired", pendingRemoveExpired, expired, `expired ratio${expired === 1 ? "" : "s"}`) : ""}
-    ${scanList(view, has, count)}`;
-}
-
-function scanList(view, has, count) {
-  if (!count(view)) {
-    return view === "verified"
-      ? `<p class="muted">No rates have been verified for ${esc(league())} in the last hour. ${importHint()}</p>`
-      : `<p class="muted">No rates have expired for ${esc(league())}.</p>`;
+// Market Ratios (SPEC.md §4.3): four tabs, each the currencies with a price of its kind, with search and paging, each
+// showing every line of a currency (vs Chaos and vs Divine) even if only one is of that kind: Competitive (#/market-ratios:
+// Competing Trades scanned in the last 4 hours) and Instant (/available: Available Trades), one column each; Estimated
+// (/estimated: a price with no scan, at its estimate, shown as Estimated Trading uses them) and Manual (/manual: a Manual
+// price, typed in).
+const RATIO_TABS = { competitive: "Competitive", available: "Instant", estimated: "Estimated", manual: "Manual" };
+const ratioTab = (arg) => (arg in RATIO_TABS ? arg : "competitive");
+const rowsOfLine = ([a, b]) => [rowKey(a, b), rowKey(b, a)];
+const LINE_HAS = {
+  competitive: ([a, b]) => isScanned(rowKey(a, b)),
+  available: ([a, b]) => isScanned(rowKey(b, a)),
+  estimated: (line) => rowsOfLine(line).some((key) => !isScanned(key) && estimateRatio(...key.split(">"))),
+  manual: (line) => rowsOfLine(line).some((key) => manualFor(key)),
+};
+function ratesPage(tab) {
+  const has = (t) => (g) => g.lines.some(LINE_HAS[t]);
+  // Each tab counts currencies (Chaos ↔ Divine as one), as its list and paging do.
+  const count = (t) => items().map(itemGroup).filter(has(t)).length + (has(t)(hubGroup()) ? 1 : 0);
+  const tabRow = `<div class="tabs">${Object.entries(RATIO_TABS).map(([t, label]) => `<a href="#/market-ratios${t === "competitive" ? "" : `/${t}`}"
+    class="${t === tab ? "active" : ""}">${label} (${num(count(t))})</a>`).join("")}</div>`;
+  if (!count(tab)) {
+    return `${tabRow}<p class="muted">${tab === "competitive" || tab === "available" ? `No ${tab === "competitive" ? "Competing" : "Available"} Trades have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`
+      : tab === "estimated" ? `No estimated prices for ${esc(league())}: every pair traded lately is scanned.`
+      : `No manual prices for ${esc(league())}. Set a step's Type to Manual, or type into a price's window, to add one.`}</p>`;
   }
-  const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(view));
-  // The latest read first (after Chaos ↔ Divine, which always leads when it's in the list).
-  const readAt = (g) => Math.max(...g.lines.flatMap(([a, b]) => [rowKey(a, b), rowKey(b, a)]).map((k) => ratioOf(k)?.verifiedAt ?? 0));
-  found.sort((x, y) => readAt(y) - readAt(x));
-  const lead = [hubGroup()].filter(has(view));
-  return `${searchBox("Search currencies")}
+  const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(tab));
+  // The latest read first (after Chaos ↔ Divine, which always leads when it's in the list); estimates by name.
+  const readAt = (g) => Math.max(...g.lines.flatMap(rowsOfLine).map((k) => (tab === "manual" ? store.manualOf(league(), k)?.at : ratioOf(k)?.verifiedAt) ?? 0));
+  if (tab !== "estimated") found.sort((x, y) => readAt(y) - readAt(x));
+  const lead = [hubGroup()].filter(has(tab));
+  return `${tabRow}
+    ${searchBox("Search currencies")}
     ${pager(found.length)}
-    ${lead.length || found.length ? ratioTable([...lead, ...paged(found)]) : `<p class="muted">No matches.</p>`}
+    ${lead.length || found.length ? ratioTable([...lead, ...paged(found)], tab) : `<p class="muted">No matches.</p>`}
     ${pager(found.length)}`;
 }
 
@@ -1107,11 +1156,9 @@ function render() {
     return;
   }
   const home = page === "home";
-  // Trade Recommendations: #/trade-recommendations[/expired][/<mode>] (the tab, then the mode); item pages: #/item/<id>/<mode>.
-  const exTab = page === "trade-recommendations" && EXCHANGE_TABS.includes(arg) ? arg : EXCHANGE_TABS[0];
-  const exMode = page === "trade-recommendations" ? (EXCHANGE_TABS.includes(arg) ? modeArg : arg) : modeArg;
-  const mode = exMode ?? DEFAULT_MODE; // a mode not in MODES fails to draw
-  const navTarget = home || ["my-listings", "trade-volumes", "imported-ratios"].includes(page) ? page : "trade-recommendations"; // item pages are under Trade Recommendations
+  // Trade Recommendations: #/trade-recommendations[/<mode>]; item pages: #/item/<id>/<mode>.
+  const mode = (page === "trade-recommendations" ? arg : modeArg) ?? DEFAULT_MODE; // a mode not in MODES fails to draw
+  const navTarget = home || ["my-listings", "trade-volumes", "market-ratios"].includes(page) ? page : "trade-recommendations"; // item pages are under Trade Recommendations
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === `#/${navTarget}`));
   // The League dropdown is filled from the rates, so it shows once they've loaded.
   $(".league").hidden = !rates;
@@ -1125,12 +1172,13 @@ function render() {
     loadData().then(render, () => { main.innerHTML = `<p class="load-error" role="alert">${ERROR_ICON}<span>Couldn't load rates. Try reloading the page.</span></p>`; });
     return;
   }
+  if (rates) store.dropOld(league(), Date.now() - store.SCAN_FOR); // scans in use only (SPEC.md §5)
   const content = home ? $(`#home-${game.id}`).innerHTML
     : page === "item" ? itemPage(decodeURIComponent(arg ?? ""), mode)
     : page === "my-listings" ? listingsPage(arg === "completed")
-    : page === "imported-ratios" ? ratesPage(ratesView(arg))
+    : page === "market-ratios" ? ratesPage(ratioTab(arg))
     : page === "trade-volumes" ? volumesPage()
-    : summaryPage(exTab, mode);
+    : summaryPage(mode);
   const before = markNext ? rowTexts() : null;
   markNext = false;
   // The Cancelled box or a Manual ratio being typed in keeps the focus, and what's typed, through the redraw.
@@ -1152,7 +1200,6 @@ function render() {
   }
   placeCancelBox();
   if (typing != null && $("#cancel-left")) Object.assign($("#cancel-left"), { value: typing }).focus();
-  if (ratioTyping != null && $("#manual-ratio")) Object.assign($("#manual-ratio"), { value: ratioTyping }).focus();
   const dialog = $("#ratio-dialog");
   if (dialog) {
     dialog.showModal();
@@ -1164,10 +1211,11 @@ function render() {
       if (id) document.getElementById(id)?.focus();
     });
   }
+  if ($("#manual-ratio")) Object.assign($("#manual-ratio"), ratioTyping != null ? { value: ratioTyping } : {}).focus();
 }
 
 // After a scan, whatever it changed on the page behind the dialog lights up and fades (SPEC.md §4.7): a Trade
-// Recommendations row, an item page's route, a Imported Ratios block (each marked data-row). It's kept across the redraws while
+// Recommendations row, an item page's route, a Market Ratios block (each marked data-row). It's kept across the redraws while
 // it fades, picking up where it was.
 const CHANGED_FOR = 4000;
 let markNext = false;
@@ -1189,6 +1237,7 @@ function markChanges(before) {
 // The price window closed: nothing open in it any more.
 function endDialog() {
   editLines = null;
+  if (editingManual?.startsWith("dlg|")) editingManual = null;
 }
 
 // The import window's stop button: sharing the game's window stops, and the window hides to its strip.
@@ -1210,12 +1259,13 @@ function hideWindow(hidden) {
 function ratioDialog() {
   if (!editLines) return "";
   const full = (id) => `${icon(id)}${esc(nameOf(id))}`;
-  // For each pair, read-only: its name first, then the two column headings directly above the prices they label.
-  // One table for all pairs so their columns line up. Prices are read with Import Market Ratios (the header's).
+  // For each pair: its name first, then the two column headings directly above the prices they label. One table for all
+  // pairs so their columns line up. Prices are read with Import Market Ratios (the header's), and each can be typed over:
+  // that row's Manual price.
   const block = ([a, b]) => `<tbody class="dialog-pair">
     <tr class="group"><th colspan="12"><div class="dialog-title"><span>${full(a)} ↔ ${full(b)}</span></div></th></tr>
     <tr class="cols"><th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th></tr>
-    ${ratioLine([a, b], false, true)}
+    ${ratioLine([a, b], false, true, "manual", true)}
   </tbody>`;
   return `<dialog id="ratio-dialog">
     <button id="dialog-close" class="close" aria-label="Close" title="Close">×</button>
@@ -1629,11 +1679,11 @@ function useRead(pair, found) {
     store.setList(league(), f.key, f.list.levels, f.list.rest);
   }
   // The box the game showed empty is saved as read with no trades. "No available trades" the game says in words, but
-  // Available alone is also what a hover without Alt shows, so a Competing price still verified (read in the last
-  // VERIFIED_FOR, Alt let go since) stays; an expired one is marked empty.
+  // Available alone is also what a hover without Alt shows, so a Competing price still in use (read in the last
+  // SCAN_FOR, Alt let go since) stays.
   const [want, have] = pair;
   const none = found.empty === "available" ? rowKey(have, want) : found.empty === "competing" ? rowKey(want, have) : null;
-  if (none && !(found.empty === "competing" && ratioOf(none)?.value && isVerified(none))) store.setEmpty(league(), none);
+  if (none && !(found.empty === "competing" && ratioOf(none)?.value)) store.setEmpty(league(), none);
   resortOnClose = true; // the routes behind re-sort when the dialog closes
   markNext = true;
 }
@@ -1683,7 +1733,11 @@ function selectLeague(name) {
   setBought((key) => boughtFor(name, key));
   setReadEmpty((key) => !!store.leagueState(name).ratios[key]?.empty);
   setUsual((recv, give) => usualPrice(rates.leagues[name], give, recv));
+  // A pair's estimate: its latest traded hour, when that's one of the last ESTIMATE_HOURS (SPEC.md §3.2c).
+  setEstimate((recv, give) => latestPrice(rates.leagues[name], give, recv, rates.nextChangeId - ESTIMATE_HOURS * 3600));
+  setManual((key) => manualFor(key));
 }
+const ESTIMATE_HOURS = 4;
 // How fast orders are posted ahead of a row's best price (SPEC.md §3.6), in what they offer per hour, measured from its
 // reads of the last hour; null when it isn't measured.
 const undercutFor = (name, key) => undercutRate(store.readsOf(name, key), Date.now());
@@ -1719,12 +1773,12 @@ main.addEventListener("change", (e) => {
     renderKeepingFocus();
     return;
   }
+  // Manual: the row's Manual price, set from the step's price when it has none yet. Estimate: the tab's Type (on My Listings,
+  // Competitive), an Estimate step while its pair has no scan.
+  if (input.value === MANUAL && !manualFor(input.dataset.key)) store.setManual(league(), input.dataset.key, input.dataset.ratio.split(":").map(Number));
   if (input.dataset.listingStep) {
     const [id, i] = input.dataset.listingStep.split("|"), [slot, k] = stepSlot(listingOf(id), Number(i));
-    // Manual starts at the price last typed into it, else the price the step was using.
-    const typed = slot[k]?.typed;
-    slot[k] = input.value === MANUAL ? { method: MANUAL, ratio: typed ?? input.dataset.ratio.split(":").map(Number), typed }
-      : typed ? { method: input.value, typed } : input.value;
+    slot[k] = input.value === ESTIMATE ? SLOW : input.value;
     store.save();
     render();
     return;
@@ -1733,13 +1787,10 @@ main.addEventListener("change", (e) => {
     const [, , itemSlug, modeArg] = location.hash.split("/");
     const item = itemOf(decodeURIComponent(itemSlug));
     const [routeId, key] = input.dataset.step.split(/\|(.*)/s);
-    const routes = methodsFor(item.id, modeArg ?? DEFAULT_MODE);
-    (routes[routeId] ??= {})[key] = input.value;
+    const routes = (methodsFor(item.id, modeArg ?? DEFAULT_MODE)[routeId] ??= {});
+    if (input.value === ESTIMATE) delete routes[key];
+    else routes[key] = input.value;
     render();
-    return;
-  }
-  if (input.dataset.manualRatio) {
-    endRatio(true);
     return;
   }
 });
@@ -1756,29 +1807,29 @@ function endCancel(take) {
   cancelling = null;
   render();
 }
-// A Manual step's number box: Enter, or leaving it, takes what's typed (rounded as the game shows ratios; blank or 0, which
-// no price is, keeps the ratio as it was); Esc leaves the ratio as it was.
-function endRatio(take) {
-  if (!editingRatio) return;
-  const [id, i, side] = editingRatio.split("|"), [slot, k] = stepSlot(listingOf(id), Number(i));
-  const v = roundHalfUp(Number($("#manual-ratio")?.value), 2);
-  editingRatio = null;
-  if (take && v > 0 && slot[k]?.ratio) {
-    const ratio = [...slot[k].ratio];
-    ratio[Number(side)] = v;
-    slot[k] = { method: MANUAL, ratio, typed: ratio };
-    store.save();
+// A Manual price's number box (a Manual step's, or the price window's): Enter, or leaving it, takes what's typed (rounded as
+// the game shows ratios; blank or 0, which no price is, keeps it as it was) as the row's Manual price, when it changes it;
+// Esc leaves it as it was.
+function endManual(take) {
+  if (!editingManual) return;
+  const [, key, side] = editingManual.split("|");
+  const v = roundHalfUp(Number($("#manual-ratio")?.value), 2), was = priceOf(scanOf(key), "manual", ...key.split(">"));
+  editingManual = null;
+  if (take && v > 0 && was && was[Number(side)] !== v) {
+    const value = [...was];
+    value[Number(side)] = v;
+    store.setManual(league(), key, value);
   }
   render();
 }
 main.addEventListener("keydown", (e) => {
   if (e.target.id !== "manual-ratio" || !["Enter", "Escape"].includes(e.key)) return;
-  e.preventDefault();
+  e.preventDefault(); // nor does Esc close the price window
   e.stopPropagation(); // not the import window's Esc
-  endRatio(e.key === "Enter");
+  endManual(e.key === "Enter");
 }, true);
 main.addEventListener("focusout", (e) => {
-  if (e.target.id === "manual-ratio" && e.target.isConnected) endRatio(true); // not the box a redraw takes away
+  if (e.target.id === "manual-ratio" && e.target.isConnected) endManual(true); // not the box a redraw takes away
 });
 main.addEventListener("submit", (e) => {
   if (!e.target.matches("[data-cancel-form]")) return;
@@ -1939,17 +1990,15 @@ main.addEventListener("click", (e) => {
   }
   const manualEdit = e.target.closest("[data-manual-edit]")?.dataset.manualEdit;
   if (manualEdit) {
-    editingRatio = manualEdit;
+    editingManual = manualEdit;
     render();
     $("#manual-ratio")?.select();
     return;
   }
   const manualReset = e.target.closest("[data-manual-reset]")?.dataset.manualReset;
   if (manualReset) {
-    const [id, i] = manualReset.split("|"), l = listingOf(id), [slot, k] = stepSlot(l, Number(i));
-    const path = pathOf(l), n = legOf(l, Number(i)), competing = ratioOf(rowKey(path[n + 1], path[n]))?.value;
-    if (competing) slot[k] = { method: MANUAL, ratio: [...competing] };
-    store.save();
+    const back = resetRatio(...manualReset.split(">"));
+    if (back) store.setManual(league(), manualReset, [...back]);
     render();
     return;
   }
@@ -2011,18 +2060,6 @@ main.addEventListener("click", (e) => {
     render();
     return;
   }
-  if (id === "remove-expired") {
-    pendingRemoveExpired = true; // the button is only enabled when a ratio has expired
-  } else if (id === "remove-expired-yes") {
-    store.removeExpired(league(), Date.now() - VERIFIED_FOR);
-    routeOrder.clear();
-    pendingRemoveExpired = false;
-  } else if (id === "remove-expired-cancel") {
-    pendingRemoveExpired = false;
-  } else {
-    return;
-  }
-  render();
 });
 
 // Import Market Ratios, in the header: it shows its window, always on every page (hidden to its strip until shown),
@@ -2058,7 +2095,6 @@ $("#live-import").addEventListener("click", () => {
 
 $("#league").addEventListener("change", (e) => {
   selectLeague(e.target.value);
-  pendingRemoveExpired = false;
   pendingRemoveCompleted = false;
   render();
 });
@@ -2082,11 +2118,10 @@ main.addEventListener("toggle", (e) => {
 }, true);
 
 window.addEventListener("hashchange", (e) => {
-  pendingRemoveExpired = false;
   pendingRemoveCompleted = false;
   pendingDelete = null;
   cancelling = null;
-  editingRatio = null;
+  editingManual = null;
   endDialog();
   resortOnClose = false;
   routeOrder.clear();
@@ -2095,10 +2130,9 @@ window.addEventListener("hashchange", (e) => {
   // A picked route lasts while on its item's page (either mode).
   const [, page, slug] = new URL(e.newURL).hash.split("/");
   if (page !== "item" || itemOf(decodeURIComponent(slug ?? ""))?.id !== pickedRoute.item) pickedRoute = {};
-  // The search box survives switching tabs on the same page (Trade Recommendations: Verified ↔ Expired, or the trading modes; Imported Ratios:
-  // one tab to the other); any other move clears it. The list changes either way, so it's back to page 1.
+  // The search box survives switching tabs on the same page (Trade Recommendations: the trading modes); any other move clears it. The list changes either way, so it's back to page 1.
   const pageOf = (url) => new URL(url).hash.split("/")[1];
-  if (!["trade-recommendations", "trade-volumes", "imported-ratios"].includes(pageOf(e.newURL)) || pageOf(e.oldURL) !== pageOf(e.newURL)) query = "";
+  if (!["trade-recommendations", "trade-volumes", "market-ratios"].includes(pageOf(e.newURL)) || pageOf(e.oldURL) !== pageOf(e.newURL)) query = "";
   if (pageOf(e.newURL) !== "trade-recommendations") sectionState.clear();
   pageNo = 1;
   lit.clear();

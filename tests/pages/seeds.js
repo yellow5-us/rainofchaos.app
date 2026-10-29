@@ -33,16 +33,16 @@ const poe1 = (list, now, ages) => state("poe1", scans(list, now, ages), { base: 
 
 // The oldest scans: Chromatic's Chaos:Chromatic and Vivid's Vivid:Divine (an item first, to show hubs lead in titles).
 const FRESH_AGES = { [`${C}>${CHROM}`]: 5, [`${VIVID}>${D}`]: 6 };
-export const EXPIRED_KEY = `${CHROM}>${C}`;
+export const STALE_KEY = `${CHROM}>${C}`;
 
 // seed(now, game) is the saved state for that game.
 export const SEEDS = {
   empty: (now, game) => state(game),
   fresh: (now) => poe1([...HUBS1, ...ITEMS1], now, FRESH_AGES),
-  // As fresh, but one direction of Chromatic read 90 minutes ago.
-  expired: (now) => poe1([...HUBS1, ...ITEMS1], now, { ...FRESH_AGES, [EXPIRED_KEY]: 90 }),
-  // As expired, starting from Divine: Divine → Chromatic → Divine doesn't use the expired price.
-  expiredFromDivine: (now) => ({ ...poe1([...HUBS1, ...ITEMS1], now, { ...FRESH_AGES, [EXPIRED_KEY]: 90 }), base: D }),
+  // As fresh, but one direction of Chromatic read 5 hours ago: over the 4 hours a scan is used, so it's an estimate.
+  stale: (now) => poe1([...HUBS1, ...ITEMS1], now, { ...FRESH_AGES, [STALE_KEY]: 300 }),
+  // As stale, starting from Divine: Divine → Chromatic → Divine doesn't use the old price.
+  staleFromDivine: (now) => ({ ...SEEDS.stale(now), base: D }),
   // As fresh, with a million of what each order offers already posted at every Chromatic price.
   queued: (now) => {
     const seed = poe1([...HUBS1, ...ITEMS1], now, FRESH_AGES);
@@ -81,13 +81,14 @@ export const SEEDS = {
   },
   // Only Chaos ↔ Divine read.
   gap: (now) => poe1(HUBS1, now),
-  // Only Chaos ↔ Divine, read 90 minutes ago (expired).
-  gapOld: (now) => poe1(HUBS1, now, { [`${C}>${D}`]: 90, [`${D}>${C}`]: 90 }),
+  // Only Chaos ↔ Divine, read 5 hours ago (no longer used).
+  gapOld: (now) => poe1(HUBS1, now, { [`${C}>${D}`]: 300, [`${D}>${C}`]: 300 }),
   poe2: (now) => state("poe2", scans([...HUBS2, ...ITEMS2], now)),
   // As poe2, saved while Chaos was picked to start with.
   poe2Chaos: (now) => state("poe2", scans([...HUBS2, ...ITEMS2], now), { base: C }),
-  // Alchemy Shard ↔ Chaos read 90 minutes ago, both ways (prices near the one-list captures' 1 : 1).
-  shard: (now) => poe1(SHARD1, now, OLD_SHARD),
-  // The same with Chaos:Shard at 1 : 10, 10x off the captures' price.
+  // Alchemy Shard ↔ Chaos read 5 hours ago, both ways (prices near the one-list captures' 1 : 1): no longer used, so a
+  // Competing price there isn't kept when a capture shows Available alone.
+  shard: (now) => poe1(SHARD1, now, { [`${SHARD}>${C}`]: 300, [`${C}>${SHARD}`]: 300 }),
+  // Read 90 minutes ago (still in use), with Chaos:Shard at 1 : 10, 10x off the captures' price.
   shardFar: (now) => poe1(SHARD1.map(([key, v]) => [key, key === `${C}>${SHARD}` ? [1, 10] : v]), now, OLD_SHARD),
 };
