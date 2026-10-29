@@ -97,7 +97,7 @@ async function click(el) {
 }
 const tabs = () => $$("#main .tabs a").map((a) => a.textContent.trim());
 const activeTab = () => $("#main .tabs a.active")?.textContent.trim();
-// Trade Recommendations' trading modes, and the one picked.
+// Recommendations' trading modes, and the one picked.
 const modes = () => $$(".mode-toggle a").map((a) => a.textContent);
 const activeMode = () => $(".mode-toggle a.active")?.textContent;
 const fixture = (game) => fetch(game === "poe2" ? "/poe2/rates.json" : "/rates.json").then((r) => r.json());
@@ -106,7 +106,7 @@ const dialog = () => $("#ratio-dialog[open]");
 const liveDialog = () => $("#live-dialog[open]:not(.collapsed)");
 // The page's own price rows, not the import window's (always on the page, hidden to its strip until shown).
 const pageRows = () => $$("#main table.ratios tbody tr:not(.group)").filter((el) => !el.closest("#live-dialog"));
-// Trade Recommendations: every section opened (each opening draws the page again, its rows in it), then its rows by section.
+// Recommendations: every section opened (each opening draws the page again, its rows in it), then its rows by section.
 async function openSections() {
   for (let d; (d = $("details[data-section]:not([open])"));) {
     const key = d.dataset.section;
@@ -115,9 +115,9 @@ async function openSections() {
   }
   return Object.fromEntries($$("details[data-section]").map((d) => [d.dataset.section, $$("tbody tr", d).map((r) => r.dataset.row)]));
 }
-// A Trade Recommendations row: one route of an item, by the route's id (PoE1 Chaos start: after:Divine, before:Divine, direct).
+// A Recommendations row: one route of an item, by the route's id (PoE1 Chaos start: after:Divine, before:Divine, direct).
 const tradeRow = (id, route = `after:${D}`) => $(`table.summary tr[data-row="${id}|${route}"]`);
-// A Trade Recommendations row's cells by column.
+// A Recommendations row's cells by column.
 const COL = { item: 0, age: 1, profit: 2, fill: 3, perMinute: 4, gold: 5, route: 6 };
 // An item page's volume as { hub name: count }.
 const volumeParts = (cell) => Object.fromEntries(cell.innerHTML.split(" + ").map((part) => {
@@ -258,8 +258,8 @@ function docked(t) {
 
 // ---------- checks ----------
 
-const NAV = ["Home", "Trade Recommendations", "My Listings", "Market Ratios", "Trade Volumes"];
-const navLabel = (a) => a.textContent.trim().replace(/ \(\d+\)$/, ""); // My Listings (N)
+const NAV = ["Home", "Recommendations", "Listings", "Market Ratios", "Volumes"];
+const navLabel = (a) => a.textContent.trim().replace(/ \(\d+\)$/, ""); // Listings (N)
 const HOME_CARDS = ["Your data", "Get the prices: Import Market Ratios", "If importing doesn't work", "Find a trade", "Support"];
 
 export const CHECKS = {
@@ -287,11 +287,11 @@ export const CHECKS = {
       t.ok(!$("#main .load-error") && $("#main").textContent.trim(), `${label}: page drawn`);
     }
     await go(`#/item/${CHROM}/competitive`);
-    t.eq($$("nav a.active").map(navLabel), ["Trade Recommendations"], "item page: Trade Recommendations active");
+    t.eq($$("nav a.active").map(navLabel), ["Recommendations"], "item page: Recommendations active");
   } },
 
   // The header stays at the top of a scrolled page, and the import window just below it.
-  pinnedHeader: { game: "poe1", seed: "fresh", hash: "#/trade-volumes", async run(t) {
+  pinnedHeader: { game: "poe1", seed: "fresh", hash: "#/volumes", async run(t) {
     await ready();
     $("#main").style.paddingBottom = "300vh";
     w.scrollTo(0, w.innerHeight);
@@ -308,8 +308,8 @@ export const CHECKS = {
       ["rgb(21, 21, 20)", "dark"], "dark colours, whatever the system's setting");
     t.eq($$("#main .guide h2").map((h) => h.textContent.trim()), HOME_CARDS, "cards in order, Your data first");
     t.eq($$("#main .guide a[href^='#/']").map((a) => [text(a), a.getAttribute("href")]),
-      [["Trade Recommendations", "#/trade-recommendations/estimated"], ["My Listings", "#/my-listings"], ["Trade Volumes", "#/trade-volumes"],
-        ["Trade Recommendations", "#/trade-recommendations"], ["My Listings", "#/my-listings"]], "the pages it names link to them, Estimated Trading's in its card");
+      [["Recommendations", "#/recommendations/estimated"], ["Listings", "#/listings"], ["Volumes", "#/volumes"],
+        ["Recommendations", "#/recommendations"], ["Listings", "#/listings"]], "the pages it names link to them, Estimated Trading's in its card");
     t.eq($$("#main .guide [data-import]").length, 3, "Import Market Ratios in its text: three links to the import window");
     await click($("#main .guide [data-import]"));
     t.eq([w.location.hash, !!liveDialog()], ["#/home", true], "a click opens it");
@@ -317,11 +317,9 @@ export const CHECKS = {
     t.ok(!liveDialog() && $("#live-dialog.collapsed"), "another hides it again, as the header's button does");
     t.eq(text($("#main .guide > :first-child")), "This site helps guide your Currency Exchange usage to make profits.", "first card, above the disclaimer");
     const link = (a) => [a?.getAttribute("href"), a?.target, a?.rel];
-    t.eq(link($("header a.report")), ["https://github.com/yellow5-us/rainofchaos.app/issues/new", "_blank", "noopener"], "header Report a Bug link opens a new GitHub issue in a new tab");
-    t.eq(text($("header a.report")), "Report a Bug", "header Report a Bug link's text");
-    t.eq(link($("header a.support")), ["https://ko-fi.com/prinny5", "_blank", "noopener"], "header Support link opens Ko-fi in a new tab");
-    t.eq([text($("header a.support")), $("header a.report + a.support") !== null], ["Support", true], "header Support link's text, right of Report a Bug");
-    t.eq(link($("#main .guide section:last-child a")), link($("header a.support")), "Support card links to Ko-fi too");
+    t.eq(link($("header a.report")), ["https://github.com/yellow5-us/rainofchaos.app/issues/new?template=problem.yml", "_blank", "noopener"], "header Report a Bug link opens a new GitHub issue in a new tab");
+    t.eq([text($("header a.report")), $("header a.support")], ["Report a Bug", null], "header Report a Bug link's text, and no Support link");
+    t.eq(link($("#main .guide section:last-child a")), ["https://ko-fi.com/prinny5", "_blank", "noopener"], "Support card links to Ko-fi");
   } },
 
   homePoe2: { game: "poe2", seed: "empty", hash: "#/home", async run(t) {
@@ -330,7 +328,7 @@ export const CHECKS = {
       "Reading prices from Path of Exile 2 isn't fully tested yet."], "the disclaimer, then the note that reading PoE2 isn't fully tested");
   } },
 
-  tradesEmpty: { game: "poe1", seed: "empty", hash: "#/trade-recommendations", async run(t) {
+  tradesEmpty: { game: "poe1", seed: "empty", hash: "#/recommendations", async run(t) {
     await ready();
     t.eq(tabs(), [], "no tabs");
     t.eq(modes(), ["Competitive Trading", "Instant Trading", "Estimated Trading"], "mode selector");
@@ -340,7 +338,7 @@ export const CHECKS = {
     docked(t);
   } },
 
-  trades: { game: "poe1", seed: "fresh", hash: "#/trade-recommendations", async run(t, seed) {
+  trades: { game: "poe1", seed: "fresh", hash: "#/recommendations", async run(t, seed) {
     await ready();
     t.eq(activeMode(), "Competitive Trading", "Competitive is the default");
     t.eq($$("details[data-section]").map((d) => [text($("h2", d)), d.open]),
@@ -391,7 +389,7 @@ export const CHECKS = {
     t.eq(text(cell(SULPHUR, "perMinute")), "—", "fill time unknown: a dash");
     t.ok(/^Gold [\d,]+$/.test(text(cell(CHROM, "gold"))), "Gold Cost: gold's icon, then the amount", text(cell(CHROM, "gold")));
     // Instant Trading: every route is instant, counted as a minute, so a minute's profit is the whole profit.
-    await go("#/trade-recommendations/available");
+    await go("#/recommendations/available");
     await openSections();
     t.eq(text(cell(CHROM, "fill")), "instant", "Instant: instant fill");
     t.eq(numbers(cell(CHROM, "perMinute", "direct").textContent), numbers(cell(CHROM, "profit", "direct").textContent),
@@ -399,7 +397,7 @@ export const CHECKS = {
   } },
 
   // Opening an item from one of its rows highlights that route while it's profitable; a losing row's opens on the best.
-  pickedRoute: { game: "poe1", seed: "fresh", hash: "#/trade-recommendations", async run(t) {
+  pickedRoute: { game: "poe1", seed: "fresh", hash: "#/recommendations", async run(t) {
     await ready();
     const top = () => $("#main details.other.top")?.dataset.row ?? null;
     await click($("a", tradeRow(CHROM, "direct")));
@@ -409,23 +407,23 @@ export const CHECKS = {
     t.eq(top(), `after:${D}`, "Instant, where the picked route loses: the best one has the border");
     await click($$("#main .tabs a").find((a) => a.textContent === "Competitive Trading"));
     t.eq(top(), "direct", "back on Competitive the pick is still there");
-    await go("#/trade-recommendations");
+    await go("#/recommendations");
     await openSections();
     await click($("a", tradeRow(CHROM, `before:${D}`)));
     t.eq(top(), `after:${D}`, "an unprofitable route: the best one keeps the border");
-    await go("#/trade-volumes");
+    await go("#/volumes");
     await go(`#/item/${CHROM}/competitive`);
     t.eq(top(), `after:${D}`, "opened another way: the best one");
   } },
 
   // A scan over 4 hours old isn't used: Chromatic's routes through Chaos ↔ Chromatic leave Competitive and Instant for
   // Estimated Trading, that step at the pair's estimate (the fixture's latest hour: 70,000 Chromatic for 20,000 Chaos).
-  tradesEstimated: { game: "poe1", seed: "stale", hash: "#/trade-recommendations", async run(t) {
+  tradesEstimated: { game: "poe1", seed: "stale", hash: "#/recommendations", async run(t) {
     await ready();
     const listed = Object.values(await openSections()).flat();
     t.ok(listed.length && !listed.some((k) => k.startsWith(`${CHROM}|`)), "Competitive: none of Chromatic's routes", listed.join(", "));
     await click($$(".mode-toggle a").find((a) => a.textContent === "Estimated Trading"));
-    t.eq([w.location.hash, activeMode()], ["#/trade-recommendations/estimated", "Estimated Trading"], "Estimated Trading");
+    t.eq([w.location.hash, activeMode()], ["#/recommendations/estimated", "Estimated Trading"], "Estimated Trading");
     const estimated = Object.values(await openSections()).flat();
     t.eq(estimated.filter((k) => !k.startsWith("CurrencyRerollSocketLinks|")).sort(), [`after:${D}`, "direct", `before:${D}`].map((r) => `${CHROM}|${r}`).sort(),
       "lists Chromatic's routes, and Orb of Fusing's (never scanned)");
@@ -447,21 +445,21 @@ export const CHECKS = {
     const direct = routes().find((r) => r.dataset.row === "direct");
     t.ok(/1 Chromatic Orb: 3\.5 Chaos Orb|3\.5 Chaos Orb/.test(text($("table.steps tbody tr", direct))), "Chaos → Chromatic at 1 : 3.5",
       text($("table.steps tbody tr", direct)));
-    await go("#/trade-recommendations/estimated");
+    await go("#/recommendations/estimated");
     await click($("a", tradeRow(CHROM, "direct")));
     t.eq(w.location.hash, `#/item/${CHROM}/estimated`, "a row opens its item on Estimated Trading");
   } },
 
   // Each route goes by its own prices: starting from Divine, Divine → Chromatic → Divine stays on Competitive, and only the
   // routes through Chaos are estimated.
-  tradesRouteEstimated: { game: "poe1", seed: "staleFromDivine", hash: "#/trade-recommendations/estimated", async run(t) {
+  tradesRouteEstimated: { game: "poe1", seed: "staleFromDivine", hash: "#/recommendations/estimated", async run(t) {
     await ready();
     const sections = await openSections(), estimated = Object.values(sections).flat();
     t.eq(estimated.filter((k) => k.startsWith(`${CHROM}|`)).sort(), [`after:${C}`, `before:${C}`].map((r) => `${CHROM}|${r}`).sort(),
       "Estimated: Chromatic's routes through Chaos only");
     t.ok(sections.untradeable?.includes("CurrencyRerollSocketLinks|direct"), "Orb of Fusing has no Divine market: Untradeable");
     t.eq(text($(".tag", tradeRow("CurrencyRerollSocketLinks", "direct").cells[COL.profit])), "no estimated price", "tagged no estimated price");
-    await go("#/trade-recommendations");
+    await go("#/recommendations");
     const scanned = Object.values(await openSections()).flat();
     t.ok(scanned.includes(`${CHROM}|direct`) && !scanned.includes(`${CHROM}|after:${C}`), "Competitive: Divine → Chromatic → Divine", scanned.join(", "));
     const tag = $(".tag", tradeRow(CHROM, "direct").cells[COL.age]);
@@ -471,7 +469,7 @@ export const CHECKS = {
 
   item: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t, seed) {
     await ready();
-    t.eq([$("#main .back a")?.textContent, $("#main .back a")?.getAttribute("href")], ["← Back to Trade Recommendations", "#/trade-recommendations"], "back link: to Trade Recommendations in the page's mode");
+    t.eq([$("#main .back a")?.textContent, $("#main .back a")?.getAttribute("href")], ["← Back to Recommendations", "#/recommendations"], "back link: to Recommendations in the page's mode");
     const tag = $("#main h1 .tag.verified");
     t.eq([tag?.textContent, tag?.title], ["5m", `Chaos Orb:Chromatic Orb at ${scanDate(atOf(seed, `${C}>${CHROM}`))}`], "verified tag and its title");
     t.eq(tabs(), ["Competitive Trading", "Instant Trading", "Estimated Trading"], "mode tabs");
@@ -508,16 +506,16 @@ export const CHECKS = {
     }
   } },
 
-  // My Listings (SPEC.md §4.6): added from an item page, any number of times; a step's button starts it, marking the one
+  // Listings (SPEC.md §4.6): added from an item page, any number of times; a step's button starts it, marking the one
   // before done, and clicked again steps back; Completed moves one to the Completed tab and Delete asks first.
   listings: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t, seed, page) {
     await ready();
     const add = () => $("[data-add-listing]", routes()[0]);
-    t.ok(add() && !$(".count-pill", routes()[0]), "Add to My Listings under the route, no count yet");
+    t.ok(add() && !$(".count-pill", routes()[0]), "Add to Listings under the route, no count yet");
     await click(add());
     await click(add());
     t.eq(text($(".count-pill", routes()[0])), "2", "two clicks, two active listings of the route");
-    t.eq(text($('nav a[href="#/my-listings"]')), "My Listings (2)", "nav counts them");
+    t.eq(text($('nav a[href="#/listings"]')), "Listings (2)", "nav counts them");
     const routeLine = text($("summary h3", routes()[0]));
     await click($(".count-pill", routes()[0]));
     t.eq(tabs(), ["Active (2)", "Completed (0)"], "Active and Completed tabs");
@@ -574,7 +572,7 @@ export const CHECKS = {
       const stored = JSON.parse(w.localStorage.getItem(STORAGE.poe1));
       for (const l of stored.listings) change(l);
       w.localStorage.setItem(STORAGE.poe1, JSON.stringify(stored));
-      await page.open("/poe1#/my-listings", "/poe1");
+      await page.open("/poe1#/listings", "/poe1");
       await ready();
     };
     await restore((l) => { l.added -= 40 * 60000; });
@@ -609,7 +607,7 @@ export const CHECKS = {
       const levels = [...(undercut ? [{ ratio: [f.ratio[0] * 0.98, f.ratio[1]], stock: undercut }] : []), { ratio: f.ratio, stock: others + (before ? 0 : f.given) }];
       (stored.leagues[LEAGUE.poe1].lists ??= {})[key] = { levels, rest: null, at: before ? l.steps[0].at - 60000 : Date.now() };
       w.localStorage.setItem(STORAGE.poe1, JSON.stringify(stored));
-      await page.open("/poe1#/my-listings", "/poe1");
+      await page.open("/poe1#/listings", "/poe1");
       await ready();
       return numbers(fillOf(0))[0] * (/h/.test(fillOf(0)) ? 60 : 1);
     };
@@ -737,7 +735,7 @@ export const CHECKS = {
     const direct = () => routes().find((r) => r.dataset.row === "direct");
     if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); }
     await click($("[data-add-listing]", direct()));
-    await go("#/my-listings");
+    await go("#/listings");
     const row = () => $$("#main table.steps tbody tr")[0], cell = () => $$("td", row())[3];
     t.eq([$$("option", $("select.method", row())).map((o) => o.textContent), $("select.method", row()).value, cellTags(cell())],
       [["Estimated", "Manual"], "estimate", ["estimated"]], "Chaos → Chromatic: an Estimated step, Estimated or Manual");
@@ -772,13 +770,13 @@ export const CHECKS = {
     state.listings = [l];
     state.leagues[LEAGUE.poe1].ratios[`${CHROM}>${C}`] = { value: [1, 3.4], digits: [0, 2], verifiedAt: Date.now() };
     w.localStorage.setItem(STORAGE.poe1, JSON.stringify(state));
-    await page.open("/poe1#/my-listings", "/poe1");
+    await page.open("/poe1#/listings", "/poe1");
     await ready();
     t.eq([$("select.method", row())?.value, cellTags(cell())[0]?.endsWith("m")], ["slow", true], "scanned: Competitive, with its scan's age");
   } },
 
   // One Manual price per direction: set on an item page's Manual step, it's the price of every Manual step on that direction,
-  // on My Listings too, and the price window and Market Ratios' Manual tab show it; typed in the price window, it changes them
+  // on Listings too, and the price window and Market Ratios' Manual tab show it; typed in the price window, it changes them
   // all; reset sets it back to the estimate.
   manualShared: { game: "poe1", seed: "stale", hash: `#/item/${CHROM}/estimated`, async run(t) {
     await ready();
@@ -798,13 +796,13 @@ export const CHECKS = {
     $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await sleep(50);
     t.eq($$(".manual-edit", cell()).map(text), ["1", "3.6"], "typed: 1 : 3.6");
-    await go("#/my-listings");
+    await go("#/listings");
     const row = () => $$("#main table.steps tbody tr")[0];
     const lsel = $("select.method", row());
     lsel.value = "manual";
     lsel.dispatchEvent(new w.Event("change", { bubbles: true }));
     await waitFor(() => $(".manual-edit", row()));
-    t.eq($$(".manual-edit", row()).map(text), ["1", "3.6"], "My Listings: a Manual step on the same direction has the same price");
+    t.eq($$(".manual-edit", row()).map(text), ["1", "3.6"], "Listings: a Manual step on the same direction has the same price");
     await click($("button.ratio-link[data-pair]", $$("#main table.steps tbody tr")[1]));
     const dlg = () => $("#ratio-dialog");
     const line = () => $("tbody.dialog-pair tr:last-child", dlg());
@@ -830,7 +828,7 @@ export const CHECKS = {
   listingManual: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t, seed, page) {
     await ready();
     await click($("[data-add-listing]", routes()[0]));
-    await go("#/my-listings");
+    await go("#/listings");
     const row = (i) => $$("#main table.steps tbody tr")[i];
     const cell = () => $$("td", row(0))[3];
     const shown = () => $$(".manual-edit", cell()).map(text);
@@ -871,7 +869,7 @@ export const CHECKS = {
     const stored = JSON.parse(w.localStorage.getItem(STORAGE.poe1));
     stored.leagues[stored.league].ratios[`${CHROM}>${C}`].value = [1, 3.6];
     w.localStorage.setItem(STORAGE.poe1, JSON.stringify(stored));
-    await page.open("/poe1#/my-listings", "/poe1");
+    await page.open("/poe1#/listings", "/poe1");
     await ready();
     t.eq(shown(), ["1", "3.35"], "a newer scan and a reload leave it as typed");
     await click(reset());
@@ -899,7 +897,7 @@ export const CHECKS = {
       stored.leagues[LEAGUE.poe1].reads = { [key]: [{ at: now - 120000, levels: [{ ratio: step.ratio, stock: 100 }] },
         { at: now - 60000, levels: [{ ratio: step.ratio, stock: 100 + Math.round(rise * step.given) }] }] };
       w.localStorage.setItem(STORAGE.poe1, JSON.stringify(stored));
-      await page.open("/poe1#/my-listings", "/poe1");
+      await page.open("/poe1#/listings", "/poe1");
       await ready();
     };
     await scans(0.9);
@@ -1002,7 +1000,7 @@ export const CHECKS = {
     docked(t);
   } },
 
-  volumes: { game: "poe1", seed: "fresh", hash: "#/trade-volumes", async run(t) {
+  volumes: { game: "poe1", seed: "fresh", hash: "#/volumes", async run(t) {
     await volumesCheck(t, "poe1", [C, D]);
     // The hub columns are the item pages' volumes.
     const page = Object.fromEntries($$("table.volumes tbody tr").map((tr) => [titles(tr.cells[0])[0], tr]));
@@ -1011,12 +1009,12 @@ export const CHECKS = {
       const row = page[NAMES[id]];
       const want = Object.fromEntries(heads.slice(2).map((h, i) => [h, numbers($$("td.num", row)[i + 1].textContent)[0]]).filter(([, n]) => n != null));
       await go(`#/item/${id}/competitive`);
-      t.eq(volumeParts($("#main .item-volume")), want, `${NAMES[id]}: its page's volume equals Trade Volumes' hub columns`);
+      t.eq(volumeParts($("#main .item-volume")), want, `${NAMES[id]}: its page's volume equals Volumes' hub columns`);
     }
   } },
 
   // Beside each hub count, its pair's age: the older of its two prices scanned, none for a pair not scanned.
-  volumesAge: { game: "poe1", seed: "stale", hash: "#/trade-volumes", async run(t) {
+  volumesAge: { game: "poe1", seed: "stale", hash: "#/volumes", async run(t) {
     await ready();
     const heads = $$("table.volumes thead th:not(.age)").slice(2).map((th) => titles(th)[0] ?? th.textContent.trim());
     const got = Object.fromEntries($$("table.volumes tbody tr").map((tr) => [titles(tr.cells[0])[0],
@@ -1047,7 +1045,7 @@ export const CHECKS = {
       JSON.stringify(tags));
   } },
 
-  volumesPoe2: { game: "poe2", seed: "poe2", hash: "#/trade-volumes", async run(t) {
+  volumesPoe2: { game: "poe2", seed: "poe2", hash: "#/volumes", async run(t) {
     await volumesCheck(t, "poe2", [E, D]);
   } },
 
@@ -1174,8 +1172,8 @@ export const CHECKS = {
     $("[data-panel-help]").click();
     await waitFor(() => !$(".import-steps"));
     t.ok(!$(".import-steps"), "help again hides them");
-    await click($$("nav a").find((a) => a.textContent === "Trade Volumes"));
-    t.eq([!!liveDialog(), w.location.hash], [true, "#/trade-volumes"], "a nav link goes to its page and leaves it open");
+    await click($$("nav a").find((a) => a.textContent === "Volumes"));
+    t.eq([!!liveDialog(), w.location.hash], [true, "#/volumes"], "a nav link goes to its page and leaves it open");
     await click($("#live-import"));
     t.ok(!liveDialog() && $("#live-dialog.collapsed"), "Import Market Ratios again hides it to its strip");
   } },
@@ -1247,7 +1245,7 @@ export const CHECKS = {
 
   // The import window stays shown, sharing or not, through clicks on the page, other pages and a price window over it,
   // until its arrow (or Import Market Ratios) hides it; Esc doesn't; its stop button stops the share and hides it.
-  importStays: { game: "poe1", seed: "fresh", hash: "#/trade-recommendations", async run(t) {
+  importStays: { game: "poe1", seed: "fresh", hash: "#/recommendations", async run(t) {
     await ready();
     await click($("#live-import"));
     $("#main").click();
@@ -1260,7 +1258,7 @@ export const CHECKS = {
     t.ok(!liveDialog(), "sharing hides it to its strip");
     await click($("#live-import"));
     t.eq([!!liveDialog(), $$("#live-dialog").length, text($(".live-status"))], [true, 1, "Imported prices for Chaos Orb and Divine Orb."], "Import Market Ratios shows it, as it was");
-    for (const label of ["Trade Volumes", "Market Ratios"]) {
+    for (const label of ["Volumes", "Market Ratios"]) {
       await click($$("nav a").find((a) => a.textContent === label));
       await sleep(300);
       t.ok(liveDialog() && sharing(), `${label}: still shown and sharing`);
@@ -1290,7 +1288,7 @@ export const CHECKS = {
   listingRead: { game: "poe1", seed: "fresh", hash: `#/item/${D}/competitive`, async run(t) {
     await ready();
     await click($("[data-add-listing]", routes()[0]));
-    await go("#/my-listings");
+    await go("#/listings");
     const row = () => $$("#main div.listing table.steps tbody tr")[0], cell = (i) => $$("td", row())[i];
     await click($("[data-listing-play]"));
     const scanAt = () => Number($(".tag[data-scan-at]", cell(3))?.dataset.scanAt);
@@ -1356,7 +1354,7 @@ export const CHECKS = {
 
   // Chaos:Vivid read with no competing trades: Vivid is still listed, its routes that sell Vivid for Chaos are Untradeable
   // for it, and the rest are priced.
-  tradesNoCompeting: { game: "poe1", seed: "noCompeting", hash: "#/trade-recommendations", async run(t) {
+  tradesNoCompeting: { game: "poe1", seed: "noCompeting", hash: "#/recommendations", async run(t) {
     await ready();
     const sections = await openSections();
     t.ok(Object.values(sections).flat().some((k) => k.startsWith(`${VIVID}|`)), "Vivid still listed");
@@ -1501,7 +1499,7 @@ export const CHECKS = {
     t.ok(!$("[data-gold-edit], input[data-gold]"), "no gold fee editor anywhere");
   } },
 
-  tradesPoe2: { game: "poe2", seed: "poe2", hash: "#/trade-recommendations", async run(t) {
+  tradesPoe2: { game: "poe2", seed: "poe2", hash: "#/recommendations", async run(t) {
     await ready();
     t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),
       [["Exalted", true], ["Divine", false]], "start with Exalted or Divine, not Chaos");
@@ -1514,7 +1512,7 @@ export const CHECKS = {
     t.eq([titles(cell), numbers(cell.textContent)], [["Exalted Orb", "Chaos Orb"], [604, 10]], "profit: the hubs first, then the item");
   } },
 
-  poe2SavedChaos: { game: "poe2", seed: "poe2Chaos", hash: "#/trade-recommendations", async run(t) {
+  poe2SavedChaos: { game: "poe2", seed: "poe2Chaos", hash: "#/recommendations", async run(t) {
     await ready();
     t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),
       [["Exalted", true], ["Divine", false]], "a saved Chaos start falls back to Exalted");
@@ -1548,7 +1546,7 @@ export const CHECKS = {
     t.eq(gaps(starts), [0, 0.09], "same prices, new stock: no sound");
   } },
 
-  gameSwitch: { game: "poe1", seed: "empty", hash: "#/trade-recommendations", async run(t, seed, page) {
+  gameSwitch: { game: "poe1", seed: "empty", hash: "#/recommendations", async run(t, seed, page) {
     await ready();
     for (const [from, to] of [["poe1", "poe2"], ["poe2", "poe1"]]) {
       const select = $("#game");
@@ -1669,7 +1667,7 @@ export const CHECKS = {
   } },
 };
 
-// Trade Volumes: its columns (each hub's "[icon] / hr"), sorted by Currency / hr, most first; each total is the currency's own
+// Volumes: its columns (each hub's "[icon] / hr"), sorted by Currency / hr, most first; each total is the currency's own
 // count, and each hub column how many of that hub traded with it, as in the fixture, with no icon.
 async function volumesCheck(t, game, hubs) {
   await ready();

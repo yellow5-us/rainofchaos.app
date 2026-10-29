@@ -1,6 +1,6 @@
 // Pages and wiring (SPEC.md §4). Hash routes: #/home (the guide; #/ and no hash go there),
-// #/trade-recommendations (Competitive Trading), with /available for Instant Trading and /estimated for Estimated Trading,
-// #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/market-ratios.
+// #/recommendations (Competitive Trading), with /available for Instant Trading and /estimated for Estimated Trading,
+// #/item/<id>/<mode>, #/listings (Active tab), #/listings/completed, #/volumes, #/market-ratios.
 import {
   allResults, better, drain, ESTIMATE, estimateRatio, FAST, priceOf, priceSource, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
   rowOf, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
@@ -162,7 +162,7 @@ const items = () => {
   if (!itemsMemo.has(lg)) itemsMemo.set(lg, itemsIn(lg));
   return itemsMemo.get(lg);
 };
-// What Trade Recommendations lists: every item plus the hubs other than the start currency (SPEC.md §4.1).
+// What Recommendations lists: every item plus the hubs other than the start currency (SPEC.md §4.1).
 const tradeItems = () => [...currencies.hubs.filter((h) => h !== baseId()).map(itemOf), ...items()]
   .sort((x, y) => x.name.localeCompare(y.name));
 const matches = (name) => name.toLowerCase().includes(query.trim().toLowerCase());
@@ -188,9 +188,9 @@ setInterval(() => {
     if (Date.now() - at >= store.SCAN_FOR) old = true;
     else el.textContent = age(at);
   }
-  // My Listings' waits count down: drawn again unless a box, a dropdown or a window is open.
+  // Listings' waits count down: drawn again unless a box, a dropdown or a window is open.
   const busy = document.activeElement?.matches("select, input") || $("dialog[open]");
-  if (old || (location.hash.startsWith("#/my-listings") && !busy)) render();
+  if (old || (location.hash.startsWith("#/listings") && !busy)) render();
 }, SCAN_TICK);
 // A row's scan while it's in use (render drops older ones).
 const ratioOf = (key) => {
@@ -214,7 +214,7 @@ const tradeKeys = (id) => {
   return ids.flatMap((a, i) => ids.slice(i + 1).flatMap((b) => [rowKey(a, b), rowKey(b, a)]));
 };
 // The pairs one route trades through, from the starting currency and back, both ways: every price it uses. A route is
-// scanned when all of them are (Trade Recommendations' Competitive and Instant Trading); else it's on Estimated Trading.
+// scanned when all of them are (Recommendations' Competitive and Instant Trading); else it's on Estimated Trading.
 const routeKeys = (id, route) => {
   const path = [baseId(), ...route.path(id)];
   return path.slice(1).flatMap((b, i) => [rowKey(path[i], b), rowKey(b, path[i])]);
@@ -458,7 +458,7 @@ const searchBox = (placeholder) =>
 // Pagination for the Market Ratios list: PAGE_SIZE rows per page. The page resets when the
 // search changes or you navigate away.
 let pageNo = 1;
-// Trade Recommendations' tables opened or closed by hand, by key; kept while on that page. Only Profitable starts open.
+// Recommendations' tables opened or closed by hand, by key; kept while on that page. Only Profitable starts open.
 const sectionState = new Map();
 const sectionOpen = (key) => sectionState.get(key) ?? key === "profitable";
 const pageCount = (total) => Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -517,7 +517,7 @@ const sortHeader = (key) => {
   return `<th${right ? ' class="num"' : ""}><button class="sort${sort.key === key ? " active" : ""}" data-sort="${key}">${label}${arrow}</button></th>`;
 };
 
-// Starting Amount (SPEC.md §1): how much of which hub every route starts with. On Trade Recommendations and item pages, at
+// Starting Amount (SPEC.md §1): how much of which hub every route starts with. On Recommendations and item pages, at
 // the top right of the page; the icons pick the hub, the selected one highlighted.
 function startControls() {
   const buttons = game.starts.map((id) => `<button type="button" data-base="${id}" class="${id === baseId() ? "active" : ""}"
@@ -532,14 +532,14 @@ const modeTabs = (mode, href, itemId) => `<div class="tabs">${Object.entries(MOD
   .map(([m, md]) => `<a href="${href(m)}" class="${m === mode ? "active" : ""}" data-reset-steps="${itemId}">${md.tab}</a>`).join("")}</div>`;
 // Competitive / Instant / Estimated Trading as a selector (links), like the starting currency's. Competitive and Instant list
 // the routes whose prices are all scanned; Estimated, the rest. The mode last shown is where item pages lead back to.
-const exchangeHref = (m) => `#/trade-recommendations${m === DEFAULT_MODE ? "" : `/${m}`}`;
+const exchangeHref = (m) => `#/recommendations${m === DEFAULT_MODE ? "" : `/${m}`}`;
 const modeToggle = (mode) => `<p class="mode-pick"><span class="mode-toggle" role="group" aria-label="Trading">${Object.entries(MODES)
   .map(([m, md]) => `<a href="${exchangeHref(m)}" class="${m === mode ? "active" : ""}"${m === mode ? ' aria-current="page"' : ""}>${md.tab}</a>`).join("")}</span></p>`;
 
-// After "nothing scanned" (Trade Recommendations, Market Ratios): a link that opens the header's import window.
+// After "nothing scanned" (Recommendations, Market Ratios): a link that opens the header's import window.
 const importHint = () => `Use <a href="#" data-import>Import Market Ratios</a> at the top right to read them from the game.`;
 
-// Trade Recommendations: the starting amount, the Competitive / Instant / Estimated selector, then the tables.
+// Recommendations: the starting amount, the Competitive / Instant / Estimated selector, then the tables.
 function summaryPage(mode) {
   const { method, estimate = false } = MODES[mode];
   // Every route of every item, each on its own row (SPEC.md §4.1): in Competitive and Instant Trading the routes whose every
@@ -608,7 +608,7 @@ const routeSummary = (r, hours = r.fillHours) => {
     : `<span class="sep">·</span><span class="${signClass(r.gain)}">${perMinuteHtml(timed)}</span> / min`}<span class="sep">·</span><span class="neg">${goldTotal(r)}</span>`;
 };
 
-// The route whose Trade Recommendations row was clicked last ({ item, route } ids): its item page highlights it while it's
+// The route whose Recommendations row was clicked last ({ item, route } ids): its item page highlights it while it's
 // profitable.
 let pickedRoute = {};
 
@@ -630,11 +630,11 @@ const routeOpen = new Set();
 function itemPage(id, mode) {
   const { method, estimate = false } = MODES[mode];
   const item = id ? itemOf(id) : null;
-  if (!item) return `<h1>Not found</h1><p><a href="${exchangeHref(mode)}">Back to Trade Recommendations</a></p>`;
+  if (!item) return `<h1>Not found</h1><p><a href="${exchangeHref(mode)}">Back to Recommendations</a></p>`;
   // The start currency isn't traded for itself (SPEC.md §4.2): pick another to start with.
   if (item.id === baseId()) {
     return `${startControls()}
-    <p class="back"><a href="${exchangeHref(mode)}">← Back to Trade Recommendations</a></p>
+    <p class="back"><a href="${exchangeHref(mode)}">← Back to Recommendations</a></p>
     <h1>${titled(item.id)}</h1>
     <p class="muted">${esc(hubName(item.id))} is your starting currency, so it has no routes. Start with another currency to see them.</p>`;
   }
@@ -649,7 +649,7 @@ function itemPage(id, mode) {
     routeOrder.set(orderKey, current.map((r) => r.route.id));
   }
   const results = routeOrder.get(orderKey).map((id) => current.find((r) => r.route.id === id));
-  // Highlight the route picked on Trade Recommendations while it's profitable, else whichever is most profitable right now
+  // Highlight the route picked on Recommendations while it's profitable, else whichever is most profitable right now
   // (after edits), if any make a profit.
   const top = (pickedRoute.item === item.id && current.find((r) => r.route.id === pickedRoute.route && profitable(r)))
     || current.find((r) => profitable(r)); // `current` is sorted best first
@@ -681,7 +681,7 @@ function itemPage(id, mode) {
   };
 
   return `${startControls()}
-    <p class="back"><a href="${exchangeHref(mode)}">← Back to Trade Recommendations</a></p>
+    <p class="back"><a href="${exchangeHref(mode)}">← Back to Recommendations</a></p>
     <h1>${titled(item.id)}${tradeTag(item.id, estimate)} <span class="muted item-volume">${volumeHtml(item.id)} traded last hour</span></h1>
     ${modeTabs(mode, (m) => `#/item/${item.id}/${m}`, item.id)}
     ${results.length ? results.map(box).join("")
@@ -1022,28 +1022,28 @@ function listingBox(l) {
 const confirmBox = (text, id) => `<div class="confirm">${text} Are you sure?
   <div class="choices"><button id="${id}-yes" class="destructive">Yes</button><button id="${id}-cancel">Cancel</button></div></div>`;
 
-// A tab's Clear All (My Listings' Completed), under the tabs at the left: red, disabled with
+// A tab's Clear All (Listings' Completed), under the tabs at the left: red, disabled with
 // nothing to clear, asking first ("This removes 3 completed listings for Allflame. Are you sure?"). `id` names its buttons.
 const clearAll = (id, asking, n, what) => `<p class="clear-all"><button id="${id}" class="destructive"${n ? "" : " disabled"}>Clear All</button></p>
   ${asking ? confirmBox(`This removes ${n} ${what} for ${esc(league())}.`, id) : ""}`;
 
-// My Listings (SPEC.md §4.6): Active (#/my-listings) and Completed (#/my-listings/completed).
+// Listings (SPEC.md §4.6): Active (#/listings) and Completed (#/listings/completed).
 function listingsPage(completed) {
-  const tab = (c) => `<a href="#/my-listings${c ? "/completed" : ""}" class="${c === completed ? "active" : ""}">${c ? "Completed" : "Active"} (${num(leagueListings(c).length)})</a>`;
+  const tab = (c) => `<a href="#/listings${c ? "/completed" : ""}" class="${c === completed ? "active" : ""}">${c ? "Completed" : "Active"} (${num(leagueListings(c).length)})</a>`;
   const list = leagueListings(completed).sort((a, b) => b.added - a.added);
   const done = leagueListings(true).length;
   return `<div class="tabs">${tab(false)}${tab(true)}</div>
     ${completed ? clearAll("remove-completed", pendingRemoveCompleted, done, `completed listing${done === 1 ? "" : "s"}`) : ""}
     ${list.length ? list.map(listingBox).join("")
       : `<p class="muted">${completed ? `No completed listings for ${esc(league())}.`
-        : `Nothing listed for ${esc(league())}. Use Add to My Listings on a trade's page to follow it here.`}</p>`}`;
+        : `Nothing listed for ${esc(league())}. Use Add to Listings on a trade's page to follow it here.`}</p>`}`;
 }
 
-// An item page's route: how many active listings it has (the same item and path, any amount), then Add to My Listings.
+// An item page's route: how many active listings it has (the same item and path, any amount), then Add to Listings.
 function addListingFoot(item, r) {
   const n = leagueListings(false).filter((l) => l.item === item.id && l.routeId === r.route.id && l.base === r.base).length;
-  return `<div class="listing-foot">${n ? `<a class="count-pill" href="#/my-listings" title="${n} active listing${n === 1 ? "" : "s"} of this trade">${n}</a>` : ""}
-    <button type="button" data-add-listing="${r.route.id}">Add to My Listings</button></div>`;
+  return `<div class="listing-foot">${n ? `<a class="count-pill" href="#/listings" title="${n} active listing${n === 1 ? "" : "s"} of this trade">${n}</a>` : ""}
+    <button type="button" data-add-listing="${r.route.id}">Add to Listings</button></div>`;
 }
 function addListing(item, mode, routeId) {
   const { method, estimate = false } = MODES[mode];
@@ -1110,7 +1110,7 @@ function ratesPage(tab) {
     ${pager(found.length)}`;
 }
 
-// Trade Volumes (#/trade-volumes): every currency (the hubs too) with how many of it traded last hour in all its hub
+// Volumes (#/volumes): every currency (the hubs too) with how many of it traded last hour in all its hub
 // markets (Currency / hr), then a column per hub ("[icon] / hr") with how many of that hub changed hands in its market
 // with the currency (blank for a hub's own), each followed by its pair's scan age. Counts, not worth. Sorted by any column (click its header, again to reverse; for the
 // session): by default Currency / hr, most first.
@@ -1164,13 +1164,13 @@ function render() {
     return;
   }
   const home = page === "home";
-  // Trade Recommendations: #/trade-recommendations[/<mode>]; item pages: #/item/<id>/<mode>.
-  const mode = (page === "trade-recommendations" ? arg : modeArg) ?? DEFAULT_MODE; // a mode not in MODES fails to draw
-  const navTarget = home || ["my-listings", "trade-volumes", "market-ratios"].includes(page) ? page : "trade-recommendations"; // item pages are under Trade Recommendations
+  // Recommendations: #/recommendations[/<mode>]; item pages: #/item/<id>/<mode>.
+  const mode = (page === "recommendations" ? arg : modeArg) ?? DEFAULT_MODE; // a mode not in MODES fails to draw
+  const navTarget = home || ["listings", "volumes", "market-ratios"].includes(page) ? page : "recommendations"; // item pages are under Recommendations
   document.querySelectorAll("nav a").forEach((a) => a.classList.toggle("active", a.getAttribute("href") === `#/${navTarget}`));
   // The League dropdown is filled from the rates, so it shows once they've loaded.
   $(".league").hidden = !rates;
-  $('nav a[href="#/my-listings"] span').textContent = rates ? `My Listings (${num(leagueListings(false).length)})` : "My Listings";
+  $('nav a[href="#/listings"] span').textContent = rates ? `Listings (${num(leagueListings(false).length)})` : "Listings";
   fitNav();
   // Home shows at once and loads the rates behind it (for the League dropdown; a failure there is retried by
   // the next page). Every other page needs them, so it waits.
@@ -1183,9 +1183,9 @@ function render() {
   if (rates) store.dropOld(Date.now(), startedRows()); // scans in use only (SPEC.md §5), and only what's still used (§7)
   const content = home ? $(`#home-${game.id}`).innerHTML
     : page === "item" ? itemPage(decodeURIComponent(arg ?? ""), mode)
-    : page === "my-listings" ? listingsPage(arg === "completed")
+    : page === "listings" ? listingsPage(arg === "completed")
     : page === "market-ratios" ? ratesPage(ratioTab(arg))
-    : page === "trade-volumes" ? volumesPage()
+    : page === "volumes" ? volumesPage()
     : summaryPage(mode);
   const before = markNext ? rowTexts() : null;
   markNext = false;
@@ -1758,7 +1758,7 @@ const boughtFor = (name, key) => boughtRate(store.readsOf(name, key), Date.now()
 // price is still the row's ratio (cleared, or the price read otherwise since, they no longer count).
 const BOOK_FOR = 60 * 60 * 1000;
 // Asked for every Instant step of every route of every item: the list first (almost always none), then
-// just this row's ratio (not ratioValues, a copy of every ratio, which made Trade Recommendations take seconds).
+// just this row's ratio (not ratioValues, a copy of every ratio, which made Recommendations take seconds).
 function listFor(name, key) {
   const list = store.listOf(name, key);
   if (!list || Date.now() - list.at > BOOK_FOR) return null;
@@ -1783,7 +1783,7 @@ main.addEventListener("change", (e) => {
     renderKeepingFocus();
     return;
   }
-  // Manual: the row's Manual price, set from the step's price when it has none yet. Estimate: the tab's Type (on My Listings,
+  // Manual: the row's Manual price, set from the step's price when it has none yet. Estimate: the tab's Type (on Listings,
   // Competitive), an Estimate step while its pair has no scan.
   if (input.value === MANUAL && !manualFor(input.dataset.key)) store.setManual(league(), input.dataset.key, input.dataset.ratio.split(":").map(Number));
   if (input.dataset.listingStep) {
@@ -2109,7 +2109,7 @@ $("#league").addEventListener("change", (e) => {
   render();
 });
 
-// Opening or closing a Trade Recommendations table draws or drops its rows; an item page's route folds are remembered. (toggle doesn't bubble, so it's caught on the way down.)
+// Opening or closing a Recommendations table draws or drops its rows; an item page's route folds are remembered. (toggle doesn't bubble, so it's caught on the way down.)
 main.addEventListener("toggle", (e) => {
   const fold = e.target.dataset?.routeFold;
   if (fold) {
@@ -2140,10 +2140,10 @@ window.addEventListener("hashchange", (e) => {
   // A picked route lasts while on its item's page (either mode).
   const [, page, id] = new URL(e.newURL).hash.split("/");
   if (page !== "item" || decodeURIComponent(id ?? "") !== pickedRoute.item) pickedRoute = {};
-  // The search box survives switching tabs on the same page (Trade Recommendations: the trading modes); any other move clears it. The list changes either way, so it's back to page 1.
+  // The search box survives switching tabs on the same page (Recommendations: the trading modes); any other move clears it. The list changes either way, so it's back to page 1.
   const pageOf = (url) => new URL(url).hash.split("/")[1];
-  if (!["trade-recommendations", "trade-volumes", "market-ratios"].includes(pageOf(e.newURL)) || pageOf(e.oldURL) !== pageOf(e.newURL)) query = "";
-  if (pageOf(e.newURL) !== "trade-recommendations") sectionState.clear();
+  if (!["recommendations", "volumes", "market-ratios"].includes(pageOf(e.newURL)) || pageOf(e.oldURL) !== pageOf(e.newURL)) query = "";
+  if (pageOf(e.newURL) !== "recommendations") sectionState.clear();
   pageNo = 1;
   lit.clear();
   render();
