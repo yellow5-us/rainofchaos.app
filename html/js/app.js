@@ -3,7 +3,7 @@
 // #/item/<id>/<mode>, #/my-listings (Active tab), #/my-listings/completed, #/trade-volumes, #/market-ratios.
 import {
   allResults, drain, ESTIMATE, estimateRatio, FAST, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
-  rowOf, setBought, setEstimate, setNoOrders, setTyped, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
+  rowOf, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
 } from "./calc.js";
 import {
   catalogNames, currencies, GOLD_ICON, iconUrl, idOfName, isBase, itemOf, itemsIn, nameOf, rowKey, setCatalog,
@@ -48,8 +48,7 @@ const MODES = {
 const METHOD_NAMES = { [FAST]: "Instant", [SLOW]: "Competitive", [MANUAL]: "Manual", [ESTIMATE]: "Estimate" };
 const DEFAULT_MODE = "competitive";
 let editLines = null; // [[a, b], ...] ratio lines open in the dialog
-let editingRatio = null; // "listingId|row|side": the Manual listing step's number being typed (side 0 Want, 1 Have)
-let editingTyped = null; // "rowKey|side": a number being typed in the price window on My Listings
+let editingManual = null; // "where|rowKey|side": the Manual price's number being typed (side 0 or 1 of the row), and where
 let resortOnClose = false; // a ratio changed: re-sort the item page's routes once the dialog closes or the import window hides
 // Import Market Ratios' state (SPEC.md §4.3, §4.7): { watch } while watching the game (its stream, video, timers and
 // readings), else what its status line says ({ note, warn } or { error }), or {} before anything's happened.
@@ -147,13 +146,6 @@ const routeLabel = (r, item) => [r.base, ...r.route.path(item.id)].map(iconOnly)
 const league = () => store.state.league;
 // Only prices read from the game (Import Market Ratios) are calculated with (SPEC.md §2).
 const ratios = () => store.ratioValues(league());
-// What My Listings calculates with: the scans, less those with a newer price typed in (SPEC.md §4.6), whose steps are
-// Estimate steps at it.
-const listingRatios = () => {
-  const out = ratios();
-  for (const key of Object.keys(store.leagueState(league()).typed ?? {})) if (typedFor(key)) delete out[key];
-  return out;
-};
 // The hub every route starts in (the Starting Amount toggle) and how much of it.
 const baseId = () => store.state.base;
 const start = () => store.state.start[baseId()];
@@ -198,12 +190,9 @@ const ratioOf = (key) => {
   return r && Date.now() - r.verifiedAt < store.SCAN_FOR ? r : undefined;
 };
 const isScanned = (key) => !!ratioOf(key);
-// A row's typed price while it's in use (under SCAN_FOR old) and newer than its scan, else null.
-const typedFor = (key) => {
-  const t = store.typedOf(league(), key);
-  return t && Date.now() - t.at < store.SCAN_FOR && !(ratioOf(key)?.verifiedAt > t.at) ? t.value : null;
-};
-const MANUAL_TITLE = "Your price, typed in on My Listings";
+// A row's Manual price (SPEC.md §3.2b), or null.
+const manualFor = (key) => store.manualOf(league(), key)?.value ?? null;
+const MANUAL_TITLE = "Your price, typed in";
 const manualTag = () => ` <span class="tag estimate" title="${MANUAL_TITLE}">manual</span>`;
 const lineScanned = ([a, b]) => isScanned(rowKey(a, b)) || isScanned(rowKey(b, a));
 // A ratio's tag: its scan's age, else nothing.
@@ -262,41 +251,48 @@ const lineOf = (x, y) => {
 };
 
 // The ratio a step used, want:have, as a button that shows the pair's prices.
-// Beside it, the age of that price's scan, or an Estimate step's estimate tag. A waiting Manual listing step
-// (`manual`, its "listingId|row") was typed in, not scanned: it opens no dialog, both its numbers are shaded, each a box
-// once clicked, and in the scan tag's place its reset puts it back to the Competing price, or with none scanned the
-// estimate (greyed out while it's that).
+// Beside it, the age of that price's scan, or an Estimate step's estimate tag. A waiting Manual step (`manual`, where it is:
+// a unique name for its row) is at its row's Manual price, typed in: it opens no dialog, both its numbers are shaded, each a
+// box once clicked (what's typed is the row's Manual price, wherever it shows), and in the scan tag's place its reset sets
+// it to the Competing price, or with none scanned the estimate (greyed out while it's that).
 const stepRow = (s) => rowOf(s.method, s.recv, s.give);
-// Where a Manual step's reset goes: the price typed in, else the Competing price scanned, else the estimate.
-const resetRatio = (recv, give) => typedFor(rowKey(recv, give)) ?? ratioOf(rowKey(recv, give))?.value ?? estimateRatio(recv, give);
-function manualRatio(s, manual) {
-  const part = (i) => (editingRatio === `${manual}|${i}`
-    ? `<input type="number" min="0" step="any" id="manual-ratio" value="${s.ratio[i]}" aria-label="${i ? "Have" : "Want"}">`
-    : `<button type="button" class="manual-edit" data-manual-edit="${manual}|${i}" title="Change">${num(s.ratio[i])}</button>`);
-  const scanned = ratioOf(rowKey(s.recv, s.give))?.value, back = resetRatio(s.recv, s.give), off = back && !sameRatio(back, s.ratio);
-  const reset = `<button type="button" class="reset" data-manual-reset="${manual}"${off ? "" : " disabled"}
-    title="${typedFor(rowKey(s.recv, s.give)) ? "Back to your price" : scanned ? "Back to the Competing price" : back ? "Back to the estimate"
-      : "No Competing price scanned"}">reset</button>`;
-  return `<span class="manual-ratio">${part(0)}${unit(s.recv)} : ${part(1)}${unit(s.give)}${reset}</span>`;
+// Where a Manual price's reset goes: the Competing price scanned, else the estimate.
+const resetRatio = (recv, give) => ratioOf(rowKey(recv, give))?.value ?? estimateRatio(recv, give);
+// A Manual price's two numbers, shaded, each a box while it's being typed (editingManual), for row `key` showing `v`
+// (`shown(i)` its numbers' text), at `where`; and its reset.
+const manualPart = (where, key, v, i, shown = (n) => num(v[n])) => (editingManual === `${where}|${key}|${i}`
+  ? `<input type="number" min="0" step="any" id="manual-ratio" value="${v[i]}" aria-label="${esc(nameOf(key.split(">")[i]))}">`
+  : `<button type="button" class="manual-edit" data-manual-edit="${where}|${key}|${i}" title="Change">${shown(i)}</button>`);
+function manualReset(key, v) {
+  const [x, y] = key.split(">"), scanned = ratioOf(key)?.value, back = resetRatio(x, y), off = back && !sameRatio(back, v);
+  return `<button type="button" class="reset" data-manual-reset="${key}"${off ? "" : " disabled"}
+    title="${scanned ? "Back to the Competing price" : back ? "Back to the estimate" : "No Competing price scanned"}">reset</button>`;
+}
+function manualRatio(s, where) {
+  const key = rowKey(s.recv, s.give);
+  return `<span class="manual-ratio">${manualPart(where, key, s.ratio, 0)}${unit(s.recv)} : ${manualPart(where, key, s.ratio, 1)}${unit(s.give)}${
+    manualReset(key, s.ratio)}</span>`;
 }
 const ratioCellFor = (s, manual) => `<td>${manual ? manualRatio(s, manual) : `<button class="ratio-link" data-pair="${lineOf(s.recv, s.give).join("|")}"
   title="Show this pair's prices">${num(s.ratio[0])}${unit(s.recv)} : ${num(s.ratio[1])}${unit(s.give)}</button>${
-    s.method === ESTIMATE ? (s.typed ? manualTag() : estimateTag()) : scanTag(stepRow(s))}`}${
+    s.method === ESTIMATE ? estimateTag() : scanTag(stepRow(s))}`}${
   below(s.noOrders ? noOrdersTag(s.method === FAST) : s.thin ? thinTag(s) : s.rounded ? ROUNDED_TAG : "")}</td>`;
 // A price whose smallest exact lot is over the 999,999 limit is traded in rounded whole-number orders (SPEC.md §3.2).
 const ROUNDED_TAG = `<span class="tag manual" title="The smallest exact trade at this price is over the exchange's ${num(MAX_ORDER)} limit, so the orders are rounded to whole numbers, a little in the other side's favour, so they always go through">rounded</span>`;
 
-// Per-row choice of Competitive or Instant (the tabs' order). Overrides last for the session, per item and mode,
+// Per-row choice of Competitive, Instant or Manual (the tabs' order, then Manual). Overrides last for the session, per item and mode,
 // until one of the item page's tabs is clicked: that puts every step back to the tab's type.
 const stepMethods = {}; // "itemId|mode|base" -> { routeId: { stepKey: method } }
 const methodsFor = (itemId, mode) => (stepMethods[`${itemId}|${mode}|${baseId()}`] ??= {});
 const resetMethods = (itemId) => Object.keys(stepMethods).filter((k) => k.startsWith(`${itemId}|`)).forEach((k) => delete stepMethods[k]);
 
-// `data` is the select's data attribute (data-step="…"), which the change handler reads. Listings' waiting steps add Manual.
-const methodSelect = (data, method, choices = [SLOW, FAST]) => `<select class="method" ${data} aria-label="Trade type">${choices.map((m) =>
+// `data` is the select's data attributes (data-step="…", the step's row and ratio), which the change handler reads.
+// A step with no Competing price scanned (an Estimate step, or Manual there) has only Estimate and Manual.
+const typeChoices = (s) => (s.method === ESTIMATE || (s.method === MANUAL && !isScanned(rowKey(s.recv, s.give))) ? [ESTIMATE, MANUAL] : [SLOW, FAST, MANUAL]);
+const stepData = (s) => `data-key="${rowKey(s.recv, s.give)}" data-ratio="${s.ratio.join(":")}"`;
+const methodSelect = (data, method, choices) => `<select class="method" ${data} aria-label="Trade type">${choices.map((m) =>
   `<option value="${m}" ${method === m ? "selected" : ""}>${METHOD_NAMES[m]}</option>`).join("")}</select>`;
-// An Estimate step's Type is just the word: it has no price scanned to trade Competitive or Instant at.
-const methodCell = (s) => `<td>${s.method === ESTIMATE ? METHOD_NAMES[ESTIMATE] : methodSelect(`data-step="${s.routeId}|${s.key}"`, s.method)}</td>`;
+const methodCell = (s) => `<td>${methodSelect(`data-step="${s.routeId}|${s.key}" ${stepData(s)}`, s.method, typeChoices(s))}</td>`;
 
 // A step's gold for `orders`: the fee of the currency it receives.
 const goldCell = (s, orders) => `<td class="num gold">${goldAmount(goldCost(s.recv, orders))}</td>`;
@@ -311,7 +307,9 @@ const stepProblem = (s) => s.noOrders || s.thin || s.tooBig || (!s.lots && s.hav
 // `bad`: this step has a problem (stepProblem), so its row is shaded red.
 // `cells` (a listing's, SPEC.md §4.6) can replace a step's Fill Time (`fill`) and Type (`trades`) cell
 // contents and its Want and Have amounts (`amount`, given "want" or "have" and the usual HTML; null for the usual), add
-// a cell at the end (`extra`), and name a Manual step whose ratio can be typed (`manual`).
+// a cell at the end (`extra`), and name where a Manual step whose ratio can be typed is (`manual`; on item pages, every
+// Manual step).
+const manualWhere = (s, cells) => (cells.manual ? cells.manual(s) : s.method === MANUAL ? `${s.routeId}-${s.index}` : null);
 function stepRows(s, n, { bad = false } = {}, cells = {}) {
   const fillOf = (x) => cells.fill?.(s) ?? x;
   const tradesTd = () => (cells.trades ? `<td>${cells.trades(s)}</td>` : methodCell(s));
@@ -334,7 +332,7 @@ function stepRows(s, n, { bad = false } = {}, cells = {}) {
       <td>${label}</td>
       <td>${amount(lot.received, s.recv)}</td>
       <td>${amount(lot.given, s.give)}${below(tag)}</td>
-      ${ratioCellFor(s, cells.manual?.(s))}
+      ${ratioCellFor(s, manualWhere(s, cells))}
       <td class="num">${fillOf("—")}</td>
       ${goldCell(s, [lot])}${tradesTd()}${extra}
     </tr>`;
@@ -347,7 +345,7 @@ function stepRows(s, n, { bad = false } = {}, cells = {}) {
       <td>${i === 0 ? label : `<span class="ghost" aria-hidden="true">${label}</span>`}${split ? " " : ""}${split}</td>
       <td>${amount(o.received, s.recv)}</td>
       <td>${amount(o.given, s.give)}</td>
-      ${i === 0 ? ratioCellFor(s, cells.manual?.(s)) : "<td></td>"}
+      ${i === 0 ? ratioCellFor(s, manualWhere(s, cells)) : "<td></td>"}
       <td class="num"${i === 0 ? fillTitle(s) : ""}>${i === 0 ? fillOf(fillTime(s.fillHours)) : ""}</td>
       ${goldCell(s, [o])}
       ${i === 0 ? tradesTd() + extra : `<td></td>${extra ? "<td></td>" : ""}`}
@@ -403,21 +401,18 @@ function spreadCell(a, b) {
   const spread = av && co ? Math.abs((co[0] / co[1]) / (av[1] / av[0]) - 1) * 100 : null;
   return `<td class="num spread">${spread == null ? "" : `${spread.toFixed(1)}%`}</td>`;
 }
-// A price as Estimated Trading uses it (`kind` "estimated": the scan, else the estimate) or My Listings ("manual": a price
-// typed in there, then the same), with its tag (SPEC.md §4.3). `edit` (the price window on My Listings, §4.6) shades its
-// two numbers, each a box once clicked, and a typed one has a reset that removes it. With none of them, as anywhere else.
+// A price as Estimated Trading uses it (`kind` "estimated": the scan, else the estimate) or as the Manual tab and the price
+// window show it ("manual": its Manual price, then the same), with its tag (SPEC.md §4.3). `edit` (the price window, §4.2)
+// shades its two numbers, each a box once clicked, setting the row's Manual price, and a Manual price has its reset. With
+// none of them, as anywhere else.
 function shownCells(a, b, key, flip, kind, edit = false) {
-  const [x, y] = key.split(">"), typed = kind === "manual" ? typedFor(key) : null, scan = ratioOf(key)?.value ? ratioOf(key) : null;
-  const v = typed ?? scan?.value ?? estimateRatio(x, y);
+  const [x, y] = key.split(">"), manual = kind === "manual" ? manualFor(key) : null, scan = ratioOf(key)?.value ? ratioOf(key) : null;
+  const v = manual ?? scan?.value ?? estimateRatio(x, y);
   if (!v) return ratioCells(a, b, key, flip, "", "no estimate");
-  const digits = !typed && scan ? scan.digits : null;
+  const digits = !manual && scan ? scan.digits : null;
   const shown = (i) => fixed(v[i], digits?.[i] ?? decimalsOf(v[i]));
-  const part = (i) => (!edit ? shown(i) : editingTyped === `${key}|${i}`
-    ? `<input type="number" min="0" step="any" id="typed-ratio" value="${v[i]}" aria-label="${esc(nameOf(i ? y : x))}">`
-    : `<button type="button" class="manual-edit" data-typed-edit="${key}|${i}" title="Change">${shown(i)}</button>`);
-  const reset = typed && edit ? ` <button type="button" class="reset" data-typed-reset="${key}"
-    title="Back to the ${scan ? "scanned price" : "estimate"}">reset</button>` : "";
-  const tag = typed ? manualTag() + reset : scan ? scanTag(key) : estimateTag();
+  const part = (i) => (edit ? manualPart("dlg", key, v, i, shown) : shown(i));
+  const tag = manual ? manualTag() + (edit ? ` ${manualReset(key, v)}` : "") : scan ? scanTag(key) : estimateTag();
   const [l, r] = flip ? [1, 0] : [0, 1];
   return `<td class="r-icon r-end">${iconOnly(a)}</td><td class="r-num r-end">${part(l)}</td><td class="r-colon">:</td><td class="r-num">${
     part(r)}</td><td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tag}</td>`;
@@ -721,8 +716,7 @@ const pathKeys = (l) => {
 // traded, then a row of its own after it (`repost`) posting what was left (`left`, of the same Have) again, the same way.
 // legOf(l, i) is the route step row i trades, methodOf how it's traded.
 const legOf = (l, i) => l.steps.slice(0, i + 1).filter((st) => !st.repost).length - 1;
-// A step's choice is a method, or a Manual step's { method: MANUAL, ratio } (want:have); stepSlot is where it's kept. A price
-// typed into a Manual step is kept as `typed` too, on whatever Type is picked after, so picking Manual again brings it back.
+// A step's choice is a method; stepSlot is where it's kept.
 const stepSlot = (l, i) => (l.steps[i].repost ? [l.steps[i], "method"] : [l.methods, legOf(l, i)]);
 const methodOf = (l, i) => l.steps[i].method ?? l.methods[legOf(l, i)];
 // The next step to start or complete: the first that isn't done (the steps' length when all are).
@@ -779,9 +773,9 @@ function listingResult(l) {
   const path = pathOf(l);
   // A repost waiting to start trades what was left at the latest price.
   const reposted = (st, i) => {
-    const k = legOf(l, i), m = methodOf(l, i), now = listingRatios();
-    let t = leg(now, m.method ?? m, path[k + 1], path[k], st.left, m.ratio), method = m.method ?? m;
-    if (t.missing) [t, method] = [leg(now, ESTIMATE, path[k + 1], path[k], st.left, null, null, true), ESTIMATE];
+    const k = legOf(l, i), now = ratios();
+    let method = methodOf(l, i), t = leg(now, method, path[k + 1], path[k], st.left);
+    if (t.missing) [t, method] = [leg(now, ESTIMATE, path[k + 1], path[k], st.left), ESTIMATE];
     return t.missing ? t : { ...t, method };
   };
   const rows = l.steps.map((st, i) => (st.state === "done" ? kept(st.fixed, 0) : st.state === "progress" ? kept(st.fixed, startedFill(l, i))
@@ -798,7 +792,7 @@ function listingResult(l) {
   // A started or done step's extra is what the step before it bought and it didn't spend, as for any step (§3.3).
   for (const [i, f] of fixed.entries()) if (i > 0 && f && fixed[i - 1]) fixed[i] = { ...f, extra: fixed[i - 1].received - f.given };
   // A waiting step with no price scanned is an Estimate step, whatever Type it was given (SPEC.md §4.6).
-  const r = runRoute(listingRatios(), l.item, routeOf(l), MODES[l.mode].method, l.start, perStep, l.base, fixed, "typed");
+  const r = runRoute(ratios(), l.item, routeOf(l), MODES[l.mode].method, l.start, perStep, l.base, fixed, true);
   if (r.missing) return r;
   // Each row's own line: a route step's trade as worked out, or with several rows, each row's part of it.
   const lines = l.steps.map((st, i) => {
@@ -1000,11 +994,10 @@ function listingBox(l) {
     // A waiting step can change how it's traded: with no Competing price scanned (an Estimate step's), only Estimate or
     // Manual; a started or done step says how it is.
     trades: (s) => (l.steps[s.index].state === "waiting"
-      ? methodSelect(`data-listing-step="${l.id}|${s.index}" data-ratio="${s.ratio.join(":")}"`, s.method,
-        s.method === ESTIMATE || (s.method === MANUAL && !isScanned(rowKey(s.recv, s.give))) ? [ESTIMATE, MANUAL] : [SLOW, FAST, MANUAL])
+      ? methodSelect(`data-listing-step="${l.id}|${s.index}" ${stepData(s)}`, s.method, typeChoices(s))
       : METHOD_NAMES[s.method]),
     // A waiting Manual step's ratio is typed in its cell.
-    manual: (s) => (l.steps[s.index].state === "waiting" && s.method === MANUAL ? `${l.id}|${s.index}` : null),
+    manual: (s) => (l.steps[s.index].state === "waiting" && s.method === MANUAL ? `${l.id}-${s.index}` : null),
     // A cancelled step shows its whole order, as posted, and after its Have how much of it filled: "[div]25 (1 filled)".
     amount: (s, side, copy) => {
       const st = l.steps[s.index];
@@ -1075,8 +1068,8 @@ const tabs = (page, modified, onlyModified) => {
 // Market Ratios (SPEC.md §4.3): four tabs, each the currencies with a price of its kind, with search and paging, each
 // showing every line of a currency (vs Chaos and vs Divine) even if only one is of that kind: Competitive (#/market-ratios:
 // Competing Trades scanned in the last 4 hours) and Instant (/available: Available Trades), one column each; Estimated
-// (/estimated: a price with no scan, at its estimate, shown as Estimated Trading uses them) and Manual (/manual: typed in
-// on My Listings, shown as My Listings uses them).
+// (/estimated: a price with no scan, at its estimate, shown as Estimated Trading uses them) and Manual (/manual: a Manual
+// price, typed in).
 const RATIO_TABS = { competitive: "Competitive", available: "Instant", estimated: "Estimated", manual: "Manual" };
 const ratioTab = (arg) => (arg in RATIO_TABS ? arg : "competitive");
 const rowsOfLine = ([a, b]) => [rowKey(a, b), rowKey(b, a)];
@@ -1084,7 +1077,7 @@ const LINE_HAS = {
   competitive: ([a, b]) => isScanned(rowKey(a, b)),
   available: ([a, b]) => isScanned(rowKey(b, a)),
   estimated: (line) => rowsOfLine(line).some((key) => !isScanned(key) && estimateRatio(...key.split(">"))),
-  manual: (line) => rowsOfLine(line).some((key) => typedFor(key)),
+  manual: (line) => rowsOfLine(line).some((key) => manualFor(key)),
 };
 function ratesPage(tab) {
   const has = (t) => (g) => g.lines.some(LINE_HAS[t]);
@@ -1095,11 +1088,11 @@ function ratesPage(tab) {
   if (!count(tab)) {
     return `${tabRow}<p class="muted">${tab === "competitive" || tab === "available" ? `No ${tab === "competitive" ? "Competing" : "Available"} Trades have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`
       : tab === "estimated" ? `No estimates for ${esc(league())}: every pair traded lately is scanned.`
-      : `No manual prices for ${esc(league())}. Type them into a listing's prices on My Listings.`}</p>`;
+      : `No manual prices for ${esc(league())}. Set a step's Type to Manual, or type into a price's window, to add one.`}</p>`;
   }
   const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(tab));
   // The latest read first (after Chaos ↔ Divine, which always leads when it's in the list); estimates by name.
-  const readAt = (g) => Math.max(...g.lines.flatMap(rowsOfLine).map((k) => (tab === "manual" ? store.typedOf(league(), k)?.at : ratioOf(k)?.verifiedAt) ?? 0));
+  const readAt = (g) => Math.max(...g.lines.flatMap(rowsOfLine).map((k) => (tab === "manual" ? store.manualOf(league(), k)?.at : ratioOf(k)?.verifiedAt) ?? 0));
   if (tab !== "estimated") found.sort((x, y) => readAt(y) - readAt(x));
   const lead = [hubGroup()].filter(has(tab));
   return `${tabRow}
@@ -1190,7 +1183,6 @@ function render() {
   // The Cancelled box or a Manual ratio being typed in keeps the focus, and what's typed, through the redraw.
   const typing = document.activeElement?.id === "cancel-left" ? document.activeElement.value : null;
   const ratioTyping = document.activeElement?.id === "manual-ratio" ? document.activeElement.value : null;
-  const typedTyping = document.activeElement?.id === "typed-ratio" ? document.activeElement.value : null;
   main.innerHTML = content
     + liveDialog()
     + ratioDialog()
@@ -1207,11 +1199,9 @@ function render() {
   }
   placeCancelBox();
   if (typing != null && $("#cancel-left")) Object.assign($("#cancel-left"), { value: typing }).focus();
-  if (ratioTyping != null && $("#manual-ratio")) Object.assign($("#manual-ratio"), { value: ratioTyping }).focus();
   const dialog = $("#ratio-dialog");
   if (dialog) {
     dialog.showModal();
-    if ($("#typed-ratio")) Object.assign($("#typed-ratio"), typedTyping != null ? { value: typedTyping } : {}).focus();
     dialog.addEventListener("close", () => { // Esc or its ×
       endDialog();
       // The text box clicked to close it keeps the focus through the redraw.
@@ -1220,6 +1210,7 @@ function render() {
       if (id) document.getElementById(id)?.focus();
     });
   }
+  if ($("#manual-ratio")) Object.assign($("#manual-ratio"), ratioTyping != null ? { value: ratioTyping } : {}).focus();
 }
 
 // After a scan, whatever it changed on the page behind the dialog lights up and fades (SPEC.md §4.7): a Trade
@@ -1245,7 +1236,7 @@ function markChanges(before) {
 // The price window closed: nothing open in it any more.
 function endDialog() {
   editLines = null;
-  editingTyped = null;
+  if (editingManual?.startsWith("dlg|")) editingManual = null;
 }
 
 // The import window's stop button: sharing the game's window stops, and the window hides to its strip.
@@ -1268,13 +1259,12 @@ function ratioDialog() {
   if (!editLines) return "";
   const full = (id) => `${icon(id)}${esc(nameOf(id))}`;
   // For each pair: its name first, then the two column headings directly above the prices they label. One table for all
-  // pairs so their columns line up. Prices are read with Import Market Ratios (the header's); on My Listings they can be
-  // typed over too.
-  const typing = location.hash.startsWith("#/my-listings");
+  // pairs so their columns line up. Prices are read with Import Market Ratios (the header's), and each can be typed over:
+  // that row's Manual price.
   const block = ([a, b]) => `<tbody class="dialog-pair">
     <tr class="group"><th colspan="12"><div class="dialog-title"><span>${full(a)} ↔ ${full(b)}</span></div></th></tr>
     <tr class="cols"><th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th></tr>
-    ${ratioLine([a, b], false, true, typing ? "manual" : null, typing)}
+    ${ratioLine([a, b], false, true, "manual", true)}
   </tbody>`;
   return `<dialog id="ratio-dialog">
     <button id="dialog-close" class="close" aria-label="Close" title="Close">×</button>
@@ -1744,7 +1734,7 @@ function selectLeague(name) {
   setUsual((recv, give) => usualPrice(rates.leagues[name], give, recv));
   // A pair's estimate: its latest traded hour, when that's one of the last ESTIMATE_HOURS (SPEC.md §3.2c).
   setEstimate((recv, give) => latestPrice(rates.leagues[name], give, recv, rates.nextChangeId - ESTIMATE_HOURS * 3600));
-  setTyped((key) => typedFor(key));
+  setManual((key) => manualFor(key));
 }
 const ESTIMATE_HOURS = 4;
 // How fast orders are posted ahead of a row's best price (SPEC.md §3.6), in what they offer per hour, measured from its
@@ -1782,13 +1772,12 @@ main.addEventListener("change", (e) => {
     renderKeepingFocus();
     return;
   }
+  // Manual: the row's Manual price, set from the step's price when it has none yet. Estimate: the tab's Type (on My Listings,
+  // Competitive), an Estimate step while its pair has no scan.
+  if (input.value === MANUAL && !manualFor(input.dataset.key)) store.setManual(league(), input.dataset.key, input.dataset.ratio.split(":").map(Number));
   if (input.dataset.listingStep) {
     const [id, i] = input.dataset.listingStep.split("|"), [slot, k] = stepSlot(listingOf(id), Number(i));
-    // Manual starts at the price last typed into it, else the price the step was using. Estimate is kept as Competitive:
-    // it's an Estimate step while its pair has no scan, and Competitive once it has.
-    const typed = slot[k]?.typed, method = input.value === ESTIMATE ? SLOW : input.value;
-    slot[k] = method === MANUAL ? { method: MANUAL, ratio: typed ?? input.dataset.ratio.split(":").map(Number), typed }
-      : typed ? { method, typed } : method;
+    slot[k] = input.value === ESTIMATE ? SLOW : input.value;
     store.save();
     render();
     return;
@@ -1797,13 +1786,10 @@ main.addEventListener("change", (e) => {
     const [, , itemSlug, modeArg] = location.hash.split("/");
     const item = itemOf(decodeURIComponent(itemSlug));
     const [routeId, key] = input.dataset.step.split(/\|(.*)/s);
-    const routes = methodsFor(item.id, modeArg ?? DEFAULT_MODE);
-    (routes[routeId] ??= {})[key] = input.value;
+    const routes = (methodsFor(item.id, modeArg ?? DEFAULT_MODE)[routeId] ??= {});
+    if (input.value === ESTIMATE) delete routes[key];
+    else routes[key] = input.value;
     render();
-    return;
-  }
-  if (input.dataset.manualRatio) {
-    endRatio(true);
     return;
   }
 });
@@ -1820,45 +1806,29 @@ function endCancel(take) {
   cancelling = null;
   render();
 }
-// A Manual step's number box: Enter, or leaving it, takes what's typed (rounded as the game shows ratios; blank or 0, which
-// no price is, keeps the ratio as it was); Esc leaves the ratio as it was.
-function endRatio(take) {
-  if (!editingRatio) return;
-  const [id, i, side] = editingRatio.split("|"), [slot, k] = stepSlot(listingOf(id), Number(i));
-  const v = roundHalfUp(Number($("#manual-ratio")?.value), 2);
-  editingRatio = null;
-  if (take && v > 0 && slot[k]?.ratio) {
-    const ratio = [...slot[k].ratio];
-    ratio[Number(side)] = v;
-    slot[k] = { method: MANUAL, ratio, typed: ratio };
-    store.save();
-  }
-  render();
-}
-// A number box in the price window on My Listings (SPEC.md §4.6): as a Manual step's, what's typed becomes that row's typed
-// price (only when it changes the price).
-function endTyped(take) {
-  if (!editingTyped) return;
-  const [key, side] = editingTyped.split("|"), [x, y] = key.split(">");
-  const v = roundHalfUp(Number($("#typed-ratio")?.value), 2), was = typedFor(key) ?? ratioOf(key)?.value ?? estimateRatio(x, y);
-  editingTyped = null;
+// A Manual price's number box (a Manual step's, or the price window's): Enter, or leaving it, takes what's typed (rounded as
+// the game shows ratios; blank or 0, which no price is, keeps it as it was) as the row's Manual price, when it changes it;
+// Esc leaves it as it was.
+function endManual(take) {
+  if (!editingManual) return;
+  const [, key, side] = editingManual.split("|"), [x, y] = key.split(">");
+  const v = roundHalfUp(Number($("#manual-ratio")?.value), 2), was = manualFor(key) ?? ratioOf(key)?.value ?? estimateRatio(x, y);
+  editingManual = null;
   if (take && v > 0 && was && was[Number(side)] !== v) {
     const value = [...was];
     value[Number(side)] = v;
-    store.setTyped(league(), key, value);
+    store.setManual(league(), key, value);
   }
   render();
 }
 main.addEventListener("keydown", (e) => {
-  if (!["manual-ratio", "typed-ratio"].includes(e.target.id) || !["Enter", "Escape"].includes(e.key)) return;
+  if (e.target.id !== "manual-ratio" || !["Enter", "Escape"].includes(e.key)) return;
   e.preventDefault(); // nor does Esc close the price window
   e.stopPropagation(); // not the import window's Esc
-  (e.target.id === "manual-ratio" ? endRatio : endTyped)(e.key === "Enter");
+  endManual(e.key === "Enter");
 }, true);
 main.addEventListener("focusout", (e) => {
-  if (!e.target.isConnected) return; // not the box a redraw takes away
-  if (e.target.id === "manual-ratio") endRatio(true);
-  if (e.target.id === "typed-ratio") endTyped(true);
+  if (e.target.id === "manual-ratio" && e.target.isConnected) endManual(true); // not the box a redraw takes away
 });
 main.addEventListener("submit", (e) => {
   if (!e.target.matches("[data-cancel-form]")) return;
@@ -2017,32 +1987,17 @@ main.addEventListener("click", (e) => {
     }, () => {});
     return;
   }
-  const typedEdit = e.target.closest("[data-typed-edit]")?.dataset.typedEdit;
-  if (typedEdit) {
-    editingTyped = typedEdit;
-    render();
-    $("#typed-ratio")?.select();
-    return;
-  }
-  const typedReset = e.target.closest("[data-typed-reset]")?.dataset.typedReset;
-  if (typedReset) {
-    store.clearTyped(league(), typedReset);
-    render();
-    return;
-  }
   const manualEdit = e.target.closest("[data-manual-edit]")?.dataset.manualEdit;
   if (manualEdit) {
-    editingRatio = manualEdit;
+    editingManual = manualEdit;
     render();
     $("#manual-ratio")?.select();
     return;
   }
   const manualReset = e.target.closest("[data-manual-reset]")?.dataset.manualReset;
   if (manualReset) {
-    const [id, i] = manualReset.split("|"), l = listingOf(id), [slot, k] = stepSlot(l, Number(i));
-    const path = pathOf(l), n = legOf(l, Number(i)), back = resetRatio(path[n + 1], path[n]);
-    if (back) slot[k] = { method: MANUAL, ratio: [...back] };
-    store.save();
+    const back = resetRatio(...manualReset.split(">"));
+    if (back) store.setManual(league(), manualReset, [...back]);
     render();
     return;
   }
@@ -2165,7 +2120,7 @@ window.addEventListener("hashchange", (e) => {
   pendingRemoveCompleted = false;
   pendingDelete = null;
   cancelling = null;
-  editingRatio = null;
+  editingManual = null;
   endDialog();
   resortOnClose = false;
   routeOrder.clear();

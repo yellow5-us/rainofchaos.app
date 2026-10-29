@@ -1,6 +1,6 @@
 // Runs in the browser (tests/index.html) or headless with macOS's JavaScriptCore:
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc -m tests/calc.test.js
-import { allResults, ESTIMATE, estimateRatio, leg, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
+import { allResults, ESTIMATE, estimateRatio, leg, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
 import { CHAOS, DIVINE, EXALTED, rowKey, setCurrencies, setGold } from "../html/js/items.js";
 import { boughtRate, undercutRate } from "../html/js/undercut.js";
 
@@ -218,12 +218,18 @@ eq([queued.steps[0].ahead, queued.steps[0].fillHours.toFixed(2), queued.fillHour
   "Competing: the stock posted ahead at the price fills first");
 eq(runRoute(ratios, CHROM, ROUTES[1], FAST, 25, { [stepKey(CHAOS, DIVINE)]: SLOW }).steps[0].fillHours.toFixed(2), "0.20",
   "a Competing step in an Instant route queues too");
-// A Manual step trades at its typed price: 390 : 1 is 9,750 chaos for 25 div, with nothing counted ahead (the 25 div queued
-// are at the read price, 380 : 1); typed at the read price, it queues behind them as Competitive does.
-const manual = (ratio) => runRoute(ratios, CHROM, ROUTES[1], FAST, 25, { [stepKey(CHAOS, DIVINE)]: { method: MANUAL, ratio } }).steps[0];
+// A Manual step trades at its row's Manual price: 390 : 1 is 9,750 chaos for 25 div, with nothing counted ahead (the 25 div
+// queued are at the read price, 380 : 1); at the read price, it queues behind them as Competitive does.
+const manual = (ratio) => {
+  setManual((key) => (key === rowKey(CHAOS, DIVINE) ? ratio : null));
+  const step = runRoute(ratios, CHROM, ROUTES[1], FAST, 25, { [stepKey(CHAOS, DIVINE)]: MANUAL }).steps[0];
+  setManual(null);
+  return step;
+};
 eq([manual([390, 1]).method, manual([390, 1]).ratio, manual([390, 1]).received, manual([390, 1]).ahead], [MANUAL, [390, 1], 9750, 0],
   "Manual: at its typed price, nothing ahead");
 eq(manual([380, 1]).ahead, 25, "Manual at the read price: behind the stock there");
+eq(manual(null).ratio, [380, 1], "Manual with no Manual price yet: the Competing price scanned");
 // Undercutting (SPEC.md §3.6): orders posted ahead after yours slow the queue's drain. The queued step above (9,500
 // chaos and 9,500 of queue at 95,000 an hour, 0.2 h) with 125 div an hour posted ahead (47,500 chaos at 380 : 1)
 // drains at 47,500: 0.4 h. Undercut faster than it trades, it still drains at half the pace: 0.4 h.

@@ -27,7 +27,7 @@ function findLot(a, b) {
 
 export const SLOW = "slow";
 export const FAST = "fast";
-// Manual: post your own order at a price typed in (its `ratio`, want:have), which scans don't change.
+// Manual: post your own order at the pair's Manual price in that direction (manualOf), which scans don't change.
 export const MANUAL = "manual";
 // Estimate: post your own order at the pair's estimate (estimateOf), for a pair with no scan.
 export const ESTIMATE = "estimate";
@@ -112,20 +112,18 @@ function aloneRatio(ratios, recv, give) {
   return { ratio: shown(per) };
 }
 // estimateOf(recv, give): how much of `recv` the pair traded for each `give` in its latest hour, when that was recent
-// (null otherwise): an Estimate step's price, as the game would show it. typedOf(key): a price typed in for a row on My
-// Listings (SPEC.md §4.6), which an Estimate step there uses before the estimate (null when none).
+// (null otherwise): an Estimate step's price, as the game would show it. manualOf(key): a row's Manual price, typed in
+// (SPEC.md §3.2b), or null.
 let estimateOf = () => null;
 export function setEstimate(fn) {
   estimateOf = fn ?? (() => null);
 }
-let typedOf = () => null;
-export function setTyped(fn) {
-  typedOf = fn ?? (() => null);
+let manualOf = () => null;
+export function setManual(fn) {
+  manualOf = fn ?? (() => null);
 }
-// An Estimate step's price as a row recv:give (want:have): with `typed`, the price typed in first; else the estimate, else null.
-export const estimateRatio = (recv, give, typed = false) => {
-  const own = typed && typedOf(rowKey(recv, give));
-  if (own) return own;
+// The estimate as a row recv:give (want:have), or null.
+export const estimateRatio = (recv, give) => {
   const per = estimateOf(recv, give);
   return per > 0 ? shown(per) : null;
 };
@@ -270,14 +268,15 @@ function bookLeg(book, recv, give, have) {
 // `ratios` maps rowKey -> [left, right] as displayed in game. `pinned`, a ratio as entered (want:have), trades at exactly
 // that price instead (a listing's step in progress, posted at it): no order book, no place in the Competing list.
 // `queued`, when given, is the stock ahead of a Competing order in what it gives, in place of the row's stock at its best
-// price (a posted order's place, which the caller knows). A Manual step is pinned at its typed price, with the row's stock
-// ahead of it only when that's the price read. An Estimate step is priced at the pair's estimate (with `typed`, a price typed
-// in first), with nothing ahead of it.
-export function leg(ratios, method, recv, give, have, pinned = null, queued = null, typed = false) {
+// price (a posted order's place, which the caller knows). A Manual step has the row's stock ahead of it only when its price
+// is the price read. A Manual step is pinned at its row's Manual price, else (none typed yet) the
+// Competing price scanned, else the estimate. An Estimate step is priced at the pair's estimate, with nothing ahead of it.
+export function leg(ratios, method, recv, give, have, pinned = null, queued = null) {
   const key = rowOf(method, recv, give);
   const read = ratios[key];
+  if (method === MANUAL && !pinned) pinned = manualOf(key) ?? read ?? estimateRatio(recv, give);
   if (pinned) ratios = { [key]: posts(method) ? pinned : [pinned[1], pinned[0]] };
-  else if (method === ESTIMATE) ratios = { [key]: estimateRatio(recv, give, typed) };
+  else if (method === ESTIMATE) ratios = { [key]: estimateRatio(recv, give) };
   let row = ratios[key];
   // Nobody else posting (the game showed no Competing trades, or the latest hour had none): the order is the only one,
   // at the pair's usual price, or it fills the other side's orders when they already pay that.
@@ -322,7 +321,6 @@ export function leg(ratios, method, recv, give, have, pinned = null, queued = nu
   return {
     noOrders: noOrders.has(key) && !posts(method),
     alone, // posting the only order, at the pair's usual price
-    typed: method === ESTIMATE && !pinned && typed && !!typedOf(key), // an Estimate step at a price typed in
     depth, // stock behind this step's price, in `recv` (Fast) or `give` (Slow) units
     // Available Trades fill existing orders, so they're instant (`thin` covers too little on offer).
     // Competing: the queue ahead at this price (in `recv` at this price) and then this step, at the row's measured
@@ -360,11 +358,9 @@ export function routesFor(base) {
 }
 
 // Full round trip (SPEC.md §3.3–3.4): the trades, and what's left over along the way, kept as it is.
-// `perStep` overrides the method for individual steps, keyed by stepKey(recv, give): a method, or a Manual step's
-// { method: MANUAL, ratio }. `fixed[i]`, when given, is step i as
+// `perStep` overrides the method for individual steps, keyed by stepKey(recv, give). `fixed[i]`, when given, is step i as
 // it was posted (a listing's step in progress or done, SPEC.md §4.6), used in place of the live one. With `estimate`, a
-// step with no price scanned is an Estimate step instead (SPEC.md §3.2c), and so is valuing what's left over; "typed" (My
-// Listings) uses the prices typed in there before the estimates.
+// step with no price scanned is an Estimate step instead (SPEC.md §3.2c), and so is valuing what's left over.
 export const stepKey = (recv, give) => `${recv}>${give}`;
 
 export function runRoute(ratios, item, route, method, start, perStep = {}, base = DIVINE, fixed = [], estimate = false) {
@@ -375,11 +371,11 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
   let have = start, cur = base, kept = 0; // kept: the base left over partway
   for (const recv of route.path(item)) {
     const o = perStep[stepKey(recv, cur)];
-    let m = fixed[steps.length]?.method ?? o?.method ?? o ?? method;
-    let t = fixed[steps.length] ?? leg(ratios, m, recv, cur, have, o?.ratio);
+    let m = fixed[steps.length]?.method ?? o ?? method;
+    let t = fixed[steps.length] ?? leg(ratios, m, recv, cur, have);
     if (t.missing && estimate) {
       m = ESTIMATE;
-      t = leg(ratios, m, recv, cur, have, null, null, estimate === "typed");
+      t = leg(ratios, m, recv, cur, have);
     }
     if (t.missing) return missing(t.missing);
     // The first trade's extra is simply unspent.
@@ -399,7 +395,7 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
   const rate = (recv, give) => {
     const key = rowOf(method, recv, give), l = ratios[key] && lot(ratios[key]);
     if (l) return { per: posts(method) ? l[1] / l[0] : l[0] / l[1] };
-    const e = estimate && estimateRatio(recv, give, estimate === "typed"), el = e && lot(e); // an estimate's row is recv:give
+    const e = estimate && estimateRatio(recv, give), el = e && lot(e); // an estimate's row is recv:give
     return el ? { per: el[1] / el[0] } : { missing: key };
   };
   const perBase = {}; // hub -> units per base
@@ -417,7 +413,7 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
       continue;
     }
     let s = leg(ratios, method, sellTo, id, n);
-    if (s.missing && estimate) s = leg(ratios, ESTIMATE, sellTo, id, n, null, null, estimate === "typed");
+    if (s.missing && estimate) s = leg(ratios, ESTIMATE, sellTo, id, n);
     if (s.missing && readEmpty(s.missing)) continue; // nobody to sell it to: worth nothing
     if (s.missing) return missing(s.missing);
     worth += inBase(sellTo, s.received);

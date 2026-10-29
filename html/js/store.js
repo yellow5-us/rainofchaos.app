@@ -51,26 +51,18 @@ export function ratioValues(name) {
   return out;
 }
 
-// Forgets the league's prices read or typed before `before` (their rows' orders and reads stay, for listings and the read
-// history).
+// Forgets the league's prices read before `before` (their rows' orders and reads stay, for listings and the read history).
 export function dropOld(name, before) {
-  const { ratios, typed = {} } = leagueState(name);
+  const ratios = leagueState(name).ratios;
   const old = Object.keys(ratios).filter((key) => ratios[key].verifiedAt < before);
   for (const key of old) delete ratios[key];
-  const oldTyped = Object.keys(typed).filter((key) => typed[key].at < before);
-  for (const key of oldTyped) delete typed[key];
-  if (old.length || oldTyped.length) save();
+  if (old.length) save();
 }
 
-// Prices typed into the price window on My Listings (SPEC.md §4.6), `typed: { [rowKey]: { value: [l, r], at } }`: used in
-// Estimated Trading and on My Listings while newer than the row's scan, for SCAN_FOR.
-export const typedOf = (name, key) => leagueState(name).typed?.[key] ?? null;
-export function setTyped(name, key, value) {
-  (leagueState(name).typed ??= {})[key] = { value, at: Date.now() };
-  save();
-}
-export function clearTyped(name, key) {
-  delete leagueState(name).typed?.[key];
+// Manual prices (SPEC.md §3.2b), typed in, one per row: `manual: { [rowKey]: { value: [l, r], at } }`, kept until changed.
+export const manualOf = (name, key) => leagueState(name).manual?.[key] ?? null;
+export function setManual(name, key, value) {
+  (leagueState(name).manual ??= {})[key] = { value, at: Date.now() };
   save();
 }
 

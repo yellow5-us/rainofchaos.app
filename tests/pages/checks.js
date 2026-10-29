@@ -439,7 +439,8 @@ export const CHECKS = {
     const est = steps.filter((tr) => $(".tag.estimate", ratioCell(tr)));
     t.ok(est.length && est.every((tr) => stepKey(tr) === `${CHROM}>${C}` || stepKey(tr) === `${C}>${CHROM}`),
       "estimate tags only on Chaos ↔ Chromatic steps", est.map(stepKey).join(", "));
-    t.ok(est.every((tr) => !$("select", tr) && /Estimate$/.test(text(tr.cells[6]))), "their Type: Estimate, no dropdown");
+    t.ok(est.every((tr) => $("select", tr)?.value === "estimate" && $$("option", $("select", tr)).map((o) => o.textContent).join() === "Estimate,Manual"),
+      "their Type: Estimate, or Manual");
     t.ok(steps.filter((tr) => !est.includes(tr)).every((tr) => $("select.method", tr)?.value === "slow"), "scanned steps: the dropdown, Competitive");
     const direct = routes().find((r) => r.dataset.row === "direct");
     t.ok(/1 Chromatic Orb: 3\.5 Chaos Orb|3\.5 Chaos Orb/.test(text($("table.steps tbody tr", direct))), "Chaos → Chromatic at 1 : 3.5",
@@ -496,8 +497,8 @@ export const CHECKS = {
     const d = await waitFor(dialog);
     if (t.ok(d && !d.classList.contains("live"), "price window opens")) {
       t.ok(d.matches(":modal"), "price window is modal");
-      t.eq($$("button", d).map((b) => b.textContent), ["×"], "price window's only button is ×");
-      t.eq($$("input, select, textarea", d).length, 0, "price window is read-only");
+      t.eq($$("button", d).map((b) => b.textContent), ["×", "1", "3.69", "1", "3.40"], "price window: × and each price's two numbers, to type over");
+      t.eq($$("input, select, textarea", d).length, 0, "no box until a number is clicked");
       t.eq($$("tr.cols th", d).map((th) => th.textContent), ["Available Trades", "Competing Trades"], "price window columns");
       t.eq(w.getComputedStyle(d, "::backdrop").backgroundColor, "rgba(0, 0, 0, 0.7)", "price window backdrop");
       $("#dialog-close").click();
@@ -774,44 +775,54 @@ export const CHECKS = {
     t.eq([$("select.method", row())?.value, cellTags(cell())[0]?.endsWith("m")], ["slow", true], "scanned: Competitive, with its scan's age");
   } },
 
-  // On My Listings the price window's prices can be typed over: the step uses the typed price, tagged manual, and Estimated
-  // Trading doesn't; reset puts it back.
-  listingTyped: { game: "poe1", seed: "stale", hash: `#/item/${CHROM}/estimated`, async run(t) {
+  // One Manual price per direction: set on an item page's Manual step, it's the price of every Manual step on that direction,
+  // on My Listings too, and the price window and Market Ratios' Manual tab show it; typed in the price window, it changes them
+  // all; reset sets it back to the estimate.
+  manualShared: { game: "poe1", seed: "stale", hash: `#/item/${CHROM}/estimated`, async run(t) {
     await ready();
     const direct = () => routes().find((r) => r.dataset.row === "direct");
-    if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); }
-    const before = text($("table.steps tbody tr", direct()));
+    const open = async () => { if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); } };
+    await open();
     await click($("[data-add-listing]", direct()));
-    await go("#/my-listings");
-    const row = () => $$("#main table.steps tbody tr")[0], cell = () => $$("td", row())[3];
-    await click($("button.ratio-link[data-pair]", row()));
-    const dlg = () => $("#ratio-dialog");
-    t.ok(dlg()?.open, "the price window opens");
-    // Chromatic ↔ Chaos: Available (Chaos:Chromatic, scanned) then Competing (Chromatic:Chaos, the estimate).
-    const [avail, comp] = [0, 1].map((side) => $$("td.r-tags", $("tbody.dialog-pair tr:last-child", dlg()))[side]);
-    t.eq([avail.textContent.trim().endsWith("m"), comp.textContent.trim()], [true, "estimate"], "prefilled: the scan, and the estimate");
-    t.eq($$("tbody.dialog-pair tr:last-child .manual-edit", dlg()).map(text), ["1", "3.69", "1", "3.5"], "every number editable, prefilled");
-    await click($$("tbody.dialog-pair tr:last-child .manual-edit", dlg())[3]);
-    $("#typed-ratio").value = "3.6";
-    $("#typed-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    // Chaos → Chromatic, an Estimate step at 1 : 3.5: set to Manual on the item page, then typed.
+    const sel = $("select.method", $("table.steps tbody tr", direct()));
+    sel.value = "manual";
+    sel.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => $(".manual-edit", direct()));
+    const cell = () => $$("td", $("table.steps tbody tr", direct()))[3];
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "item page: Manual starts from the estimate");
+    await click($$(".manual-edit", cell())[1]);
+    $("#manual-ratio").value = "3.6";
+    $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     await sleep(50);
-    const tags = $$("td.r-tags", $("tbody.dialog-pair tr:last-child", dlg()));
-    t.eq([tags[1].textContent.replace(/\s+/g, " ").trim(), !!dlg()?.open], ["manual reset", true], "typed: tagged manual, with a reset; the window stays open");
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.6"], "typed: 1 : 3.6");
+    await go("#/my-listings");
+    const row = () => $$("#main table.steps tbody tr")[0];
+    const lsel = $("select.method", row());
+    lsel.value = "manual";
+    lsel.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => $(".manual-edit", row()));
+    t.eq($$(".manual-edit", row()).map(text), ["1", "3.6"], "My Listings: a Manual step on the same direction has the same price");
+    await click($("button.ratio-link[data-pair]", $$("#main table.steps tbody tr")[1]));
+    const dlg = () => $("#ratio-dialog");
+    const line = () => $("tbody.dialog-pair tr:last-child", dlg());
+    t.eq([$$(".manual-edit", line()).map(text), $$("td.r-tags", line())[1].textContent.replace(/\s+/g, " ").trim()],
+      [["1", "3.69", "1", "3.6"], "manual reset"], "the price window: the Manual price, tagged manual, with reset");
+    await click($$(".manual-edit", line())[3]);
+    $("#manual-ratio").value = "3.55";
+    $("#manual-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await sleep(50);
     $("#dialog-close").click();
     await waitFor(() => !dlg());
-    t.eq([text(cell()).includes("3.6"), cellTags(cell())], [true, ["manual"]], "the step uses it, tagged manual");
-    await go(`#/item/${CHROM}/estimated`);
-    if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); }
-    t.eq(text($("table.steps tbody tr", direct())), before, "Estimated Trading doesn't use it");
+    t.eq($$(".manual-edit", row()).map(text), ["1", "3.55"], "typed in the window: the listing's step follows");
     await go("#/market-ratios/manual");
     t.eq([activeTab(), $$("tbody[data-row]").map((b) => b.dataset.row)], ["Manual (1)", [CHROM]], "Market Ratios' Manual tab lists it");
-    t.eq([$$("td.r-tags", $("tbody[data-row] tr:nth-child(2)"))[1].textContent.trim(), !!$("#main table.ratios .manual-edit, #main table.ratios [data-typed-reset]")],
-      ["manual", false], "tagged manual, not editable there");
-    await go("#/my-listings");
-    await click($("button.ratio-link[data-pair]", row()));
-    await click($("[data-typed-reset]", dlg()));
-    t.eq($$("td.r-tags", $("tbody.dialog-pair tr:last-child", dlg()))[1].textContent.trim(), "estimate", "reset: back to the estimate");
-    $("#dialog-close").click();
+    t.ok(!$("#main table.ratios .manual-edit, #main table.ratios [data-manual-reset]"), "not editable there");
+    await go(`#/item/${CHROM}/estimated`);
+    await open();
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.55"], "and the item page's");
+    await click($("[data-manual-reset]", cell()));
+    t.eq($$(".manual-edit", cell()).map(text), ["1", "3.5"], "reset: back to the estimate");
   } },
 
   listingManual: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t, seed, page) {
@@ -943,7 +954,7 @@ export const CHECKS = {
   itemTypes: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t) {
     await ready();
     const sel = () => $("select.method", stepRowsOf(routes()[0])[0]);
-    t.eq($$("option", sel()).map((o) => o.textContent), ["Competitive", "Instant"], "the selector's two choices, in the tabs' order");
+    t.eq($$("option", sel()).map((o) => o.textContent), ["Competitive", "Instant", "Manual"], "the selector: Competitive and Instant, in the tabs' order, then Manual");
     const methods = () => [...new Set($$("select.method").map((s) => s.value))].sort();
     const tab = (name) => $$("#main .tabs a").find((a) => a.textContent === name);
     const toInstant = async () => {
@@ -1056,7 +1067,7 @@ export const CHECKS = {
     t.eq(est.slice(0, 2), ["estimate", "estimate"], "its Chaos line at the estimate, both ways");
     t.ok(!$("#main table.ratios .manual-edit, #main table.ratios input"), "nothing to edit");
     await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Manual")));
-    t.eq(text($("#main > p.muted")), `No manual prices for ${LEAGUE.poe1}. Type them into a listing's prices on My Listings.`, "Manual: empty message");
+    t.eq(text($("#main > p.muted")), `No manual prices for ${LEAGUE.poe1}. Set a step's Type to Manual, or type into a price's window, to add one.`, "Manual: empty message");
   } },
 
   // Each price is six cells (icon, number, colon, number, icon, tags), so every row's parts line up: the colons in one
