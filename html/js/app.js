@@ -419,37 +419,26 @@ function shownCells(a, b, key, flip, kind, edit = false) {
   return `<td class="r-icon r-end">${iconOnly(a)}</td><td class="r-num r-end">${part(l)}</td><td class="r-colon">:</td><td class="r-num">${
     part(r)}</td><td class="r-icon">${iconOnly(b)}</td><td class="r-tags">${tag}</td>`;
 }
-// One line of a pair's prices: as scanned, or as `kind` shows them (shownCells: "estimated", "manual"). Market Ratios'
-// Competitive and Instant tabs (`kind` "competitive", "available") show only that column, scanned.
+// One line of a pair's prices: as scanned, or as `kind` shows them (shownCells: "estimated", "manual").
 const ratioLine = ([a, b], withStats, withNoOrders = false, kind = null, edit = false) => {
   const v = withStats && pairVolume(rates.leagues[league()], a, b);
-  const vol = `<td class="vol muted">${qty(v?.[0] ?? 0, a)} ⇄ ${qty(v?.[1] ?? 0, b)}</td>`;
-  if (kind === "competitive") return `<tr>${ratioCell(a, b, rowKey(a, b), false, withNoOrders)}${waitCell(a, b)}${vol}</tr>`;
-  if (kind === "available") return `<tr>${ratioCell(a, b, rowKey(b, a), true, withNoOrders)}${vol}</tr>`;
-  const stats = withStats ? `${waitCell(a, b)}${spreadCell(a, b)}${vol}` : "";
+  const stats = withStats ? `${waitCell(a, b)}${spreadCell(a, b)}<td class="vol muted">${qty(v?.[0] ?? 0, a)} ⇄ ${qty(v?.[1] ?? 0, b)}</td>` : "";
   const cell = (key, flip) => (kind ? shownCells(a, b, key, flip, kind, edit) : ratioCell(a, b, key, flip, withNoOrders));
   return `<tr>${cell(rowKey(b, a), true)}${cell(rowKey(a, b), false)}${stats}</tr>`;
 };
 
 // Groups of lines, each under its own heading, e.g. one group per item (vs Chaos, vs Divine).
-const WAIT_TH = `<th class="num" title="How long the Competing orders already at that price take to fill">Wait</th>`;
-const RATIO_HEADS = {
-  competitive: [`<th colspan="6">Competing Trades</th>${WAIT_TH}`, 8],
-  available: [`<th colspan="6">Available Trades</th>`, 7],
-  both: [`<th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th>${WAIT_TH}
-    <th class="num" title="How far apart the Available and Competing prices are">Spread</th>`, 15],
-};
-const ratioTable = (groups, kind = "both") => {
-  const [heads, cols] = RATIO_HEADS[kind] ?? RATIO_HEADS.both;
-  return `<div class="scroll"><table class="ratios">
-  <thead><tr>${heads}<th class="vol">Traded last hour</th></tr></thead>
-  ${groups.map((g) => `<tbody data-row="${g.id ?? "hubs"}"><tr class="group"><th colspan="${cols}"><div class="group-head">
+// `kind` (shownCells) for prices other than the scans.
+const ratioTable = (groups, kind = null) => `<div class="scroll"><table class="ratios">
+  <thead><tr><th colspan="6">Available Trades</th><th colspan="6">Competing Trades</th>
+    <th class="num" title="How long the Competing orders already at that price take to fill">Wait</th>
+    <th class="num" title="How far apart the Available and Competing prices are">Spread</th><th class="vol">Traded last hour</th></tr></thead>
+  ${groups.map((g) => `<tbody data-row="${g.id ?? "hubs"}"><tr class="group"><th colspan="15"><div class="group-head">
     <span>${g.id // a currency's name opens its page in Available Trades; the hubs' block has none
       ? `<a href="#/item/${g.id}/available" title="Open in Available Trades">${icon(g.id)}${esc(g.title)}</a>`
       : esc(g.title)}</span>
-  </div></th></tr>${g.lines.map((line) => ratioLine(line, true, false, kind === "both" ? null : kind)).join("")}</tbody>`).join("")}
+  </div></th></tr>${g.lines.map((line) => ratioLine(line, true, false, kind)).join("")}</tbody>`).join("")}
 </table></div>`;
-};
 
 // The hubs against each other (PoE1: Chaos ↔ Divine), then one block per item with a line per hub.
 const hubGroup = () => ({
@@ -1067,16 +1056,15 @@ const tabs = (page, modified, onlyModified) => {
   return `<div class="tabs">${tab(`#/${page}`, `Modified (${modified})`, onlyModified)}${tab(`#/${page}/all`, "All", !onlyModified)}</div>`;
 };
 
-// Market Ratios (SPEC.md §4.3): four tabs, each the currencies with a price of its kind, with search and paging, each
-// showing every line of a currency (vs Chaos and vs Divine) even if only one is of that kind: Competitive (#/market-ratios:
-// Competing Trades scanned in the last 4 hours) and Instant (/available: Available Trades), one column each; Estimated
-// (/estimated: every currency with an estimate, at it) and Manual (/manual: a Manual price, typed in).
-const RATIO_TABS = { competitive: "Competitive", available: "Instant", estimated: "Estimated", manual: "Manual" };
-const ratioTab = (arg) => (arg in RATIO_TABS ? arg : "competitive");
+// Market Ratios (SPEC.md §4.3): three tabs, each the currencies with a price of its kind, with search and paging, each
+// showing every line of a currency (vs Chaos and vs Divine) even if only one is of that kind: Scanned (#/market-ratios,
+// scanned in the last 4 hours), Estimated (/estimated: every currency with an estimate, at it) and Manual (/manual: a
+// Manual price, typed in).
+const RATIO_TABS = { scanned: "Scanned", estimated: "Estimated", manual: "Manual" };
+const ratioTab = (arg) => (arg in RATIO_TABS ? arg : "scanned");
 const rowsOfLine = ([a, b]) => [rowKey(a, b), rowKey(b, a)];
 const LINE_HAS = {
-  competitive: ([a, b]) => isScanned(rowKey(a, b)),
-  available: ([a, b]) => isScanned(rowKey(b, a)),
+  scanned: (line) => lineScanned(line),
   estimated: (line) => rowsOfLine(line).some((key) => estimateRatio(...key.split(">"))),
   manual: (line) => rowsOfLine(line).some((key) => manualFor(key)),
 };
@@ -1095,10 +1083,10 @@ function ratesPage(tab) {
   const has = (t) => (g) => g.lines.some(LINE_HAS[t]);
   // Each tab counts currencies (Chaos ↔ Divine as one), as its list and paging do.
   const count = (t) => items().map(itemGroup).filter(has(t)).length + (has(t)(hubGroup()) ? 1 : 0);
-  const tabRow = `<div class="tabs">${Object.entries(RATIO_TABS).map(([t, label]) => `<a href="#/market-ratios${t === "competitive" ? "" : `/${t}`}"
+  const tabRow = `<div class="tabs">${Object.entries(RATIO_TABS).map(([t, label]) => `<a href="#/market-ratios${t === "scanned" ? "" : `/${t}`}"
     class="${t === tab ? "active" : ""}">${label} (${num(count(t))})</a>`).join("")}</div>`;
   if (!count(tab)) {
-    return `${tabRow}<p class="muted">${tab === "competitive" || tab === "available" ? `No ${tab === "competitive" ? "Competing" : "Available"} Trades have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`
+    return `${tabRow}<p class="muted">${tab === "scanned" ? `No rates have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`
       : tab === "estimated" ? `No estimated prices for ${esc(league())}: nothing has traded in the last 4 hours.`
       : `No manual prices for ${esc(league())}. Set a step's Type to Manual, or type into a price's window, to add one.`}</p>`;
   }
@@ -1114,7 +1102,7 @@ function ratesPage(tab) {
   return `${tabRow}
     ${searchBox("Search currencies")}
     ${pager(found.length)}
-    ${lead.length || found.length ? ratioTable([...lead, ...paged(found)], tab) : `<p class="muted">No matches.</p>`}
+    ${lead.length || found.length ? ratioTable([...lead, ...paged(found)], tab === "scanned" ? null : tab) : `<p class="muted">No matches.</p>`}
     ${pager(found.length)}`;
 }
 

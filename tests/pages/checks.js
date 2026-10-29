@@ -1051,13 +1051,13 @@ export const CHECKS = {
 
   ratios: { game: "poe1", seed: "fresh", hash: "#/market-ratios", async run(t, seed) {
     await ready();
-    t.eq([tabs(), activeTab(), $("#main .clear-all")], [["Competitive (5)", "Instant (5)", "Estimated (5)", "Manual (0)"], "Competitive (5)", null],
-      "tabs: Competitive, the default, Instant, Estimated (every currency traded in the last 4 hours, scanned or not) and Manual; no Clear All");
+    t.eq([tabs(), activeTab(), $("#main .clear-all")], [["Scanned (5)", "Estimated (5)", "Manual (0)"], "Scanned (5)", null],
+      "tabs: Scanned, the default, Estimated (every currency traded in the last 4 hours, scanned or not) and Manual; no Clear All");
     t.eq(text($("tbody[data-row] .group-head")), "Chaos ↔ Divine", "Chaos ↔ Divine first");
     t.eq($$("tbody[data-row] .group-head").length, 5, "every currency scanned");
     const times = new Set(Object.values(seed.leagues[seed.league].ratios).map((r) => r.verifiedAt));
     const tags = $$("#main .tag.verified");
-    t.eq(tags.length, 9, "a green tag per scanned Competing price");
+    t.eq(tags.length, 18, "a green tag per scanned price");
     t.eq(tags.filter((x) => !times.has(Number(x.dataset.scanAt)) || x.title !== `Scanned ${scanDate(Number(x.dataset.scanAt))}`)
       .map((x) => x.title), [], "tags' titles: Scanned <date>");
     await click($$("#main .tabs a").find((a) => a.textContent.startsWith("Estimated")));
@@ -1086,11 +1086,11 @@ export const CHECKS = {
     await ready();
     const rows = pageRows();
     t.eq(rows.map((tr) => [...tr.cells].map((td) => td.className.replace(/ ?muted/, "")).join(" ")).filter((x, i, all) => all.indexOf(x) === i),
-      [["r-icon r-end", "r-num r-end", "r-colon", "r-num", "r-icon", "r-tags", "num wait", "vol"].join(" ")],
-      "every row (Competitive): icon, number, colon, number, icon, tags, then Wait and the volume");
+      [["r-icon r-end", "r-num r-end", "r-colon", "r-num", "r-icon", "r-tags"].join(" ").repeat(2).replace("r-tagsr-icon", "r-tags r-icon") + " num wait num spread vol"],
+      "every row: icon, number, colon, number, icon, tags, twice, then Wait, Spread and the volume");
     const box = (el) => el.getBoundingClientRect();
     const ink = (td) => { const r = w.document.createRange(); r.selectNodeContents(td); return r.getBoundingClientRect(); };
-    for (const col of [0]) {
+    for (const col of [0, 6]) {
       const at = (i) => rows.map((tr) => tr.cells[col + i]);
       const same = (xs) => Math.max(...xs) - Math.min(...xs) <= 1;
       t.ok(same(at(2).map((td) => (box(td).left + box(td).right) / 2)), `column ${col / 6 + 1}: colons line up`);
@@ -1103,18 +1103,17 @@ export const CHECKS = {
     }
   } },
 
-  // Competitive: the Competing price and Wait, the Competing queue's fill time at the pair's pace (only where its stock was
-  // read); Instant: the Available price alone.
+  // Wait: the Competing queue's fill time at the pair's pace (only where its stock was read); Spread: how far apart the
+  // two prices are. Every tab has the same table.
   ratioStats: { game: "poe1", seed: "stocked", hash: "#/market-ratios", async run(t) {
     await ready();
     const heads = () => $$("#main table.ratios thead th").filter((el) => !el.closest("#live-dialog")).map((th) => th.textContent);
-    t.eq(heads(), ["Competing Trades", "Wait", "Traded last hour"], "Competitive: headers");
-    const wait = (n) => pageRows()[n].querySelector(".wait").textContent;
-    t.eq(wait(0), "~1.0 h", "Chaos ↔ Divine: 250 div queued at 250 an hour (a quarter of the 1,000 traded)");
-    t.eq(wait(1), "", "Chromatic vs Chaos: no stock read, no wait");
-    await go("#/market-ratios/available");
-    t.eq([activeTab(), heads()], ["Instant (5)", ["Available Trades", "Traded last hour"]], "Instant: the Available price alone");
-    t.eq(text($$("td", pageRows()[0]).find((td) => td.classList.contains("r-num"))), "370", "Chaos ↔ Divine: 370 : 1");
+    t.eq(heads(), ["Available Trades", "Competing Trades", "Wait", "Spread", "Traded last hour"], "headers");
+    const line = (n) => { const tr = pageRows()[n]; return [tr.querySelector(".wait").textContent, tr.querySelector(".spread").textContent]; };
+    t.eq(line(0), ["~1.0 h", "2.7%"], "Chaos ↔ Divine: 250 div queued at 250 an hour (a quarter of the 1,000 traded); 370 against 380");
+    t.eq(line(1), ["", "8.5%"], "Chromatic vs Chaos: no stock read, no wait; 3.69 against 3.40");
+    await go("#/market-ratios/estimated");
+    t.eq(heads(), ["Available Trades", "Competing Trades", "Wait", "Spread", "Traded last hour"], "Estimated: the same headers");
   } },
 
   // Undercutting (SPEC.md §3.6): 250 div an hour posted ahead of Chaos:Divine's best price, read from its lists, drains its
@@ -1141,8 +1140,8 @@ export const CHECKS = {
 
   ratiosEmpty: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
-    t.eq(tabs(), ["Competitive (0)", "Instant (0)", "Estimated (5)", "Manual (0)"], "tabs");
-    t.eq(text($("#main > p.muted")), `No Competing Trades have been scanned for ${LEAGUE.poe1} in the last 4 hours. Use Import Market Ratios at the top right to read them from the game.`, "empty message");
+    t.eq(tabs(), ["Scanned (0)", "Estimated (5)", "Manual (0)"], "tabs");
+    t.eq(text($("#main > p.muted")), `No rates have been scanned for ${LEAGUE.poe1} in the last 4 hours. Use Import Market Ratios at the top right to read them from the game.`, "empty message");
   } },
 
   importWindow: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
@@ -1367,8 +1366,8 @@ export const CHECKS = {
     t.ok(sell && !$(".tag.warn", sell), "selling it posts the only order, at the pair's usual price (0.12 Chaos a Vivid), with nothing wrong",
       text($("table.steps", direct)));
     t.ok(!/no competing trades/.test(text(direct)), "and no tag saying nobody else is posting");
-    await go("#/market-ratios/available");
-    t.eq($$("#main td.r-none").map(text), ["no trades"], "Market Ratios' Instant tab shows the box as no trades");
+    await go("#/market-ratios");
+    t.eq($$("#main td.r-none").map(text), ["no trades"], "Market Ratios shows the box as no trades");
   } },
 
   // One list read: Available alone with no banners (no Competing trades), or Competing moved up under the game's "no
