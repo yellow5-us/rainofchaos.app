@@ -403,12 +403,13 @@ function spreadCell(a, b) {
   const spread = av && co ? Math.abs((co[0] / co[1]) / (av[1] / av[0]) - 1) * 100 : null;
   return `<td class="num spread">${spread == null ? "" : `${spread.toFixed(1)}%`}</td>`;
 }
-// A price as Estimated Trading uses it (`kind` "estimated": the scan, else the estimate) or as the Manual tab and the price
-// window show it ("manual": its Manual price, then the same), with its tag (SPEC.md §4.3). `edit` (the price window, §4.2)
+// A price as Market Ratios' Estimated tab shows it (`kind` "estimated": the estimate) or as the Manual tab and the price
+// window show it ("manual": its Manual price, else the scan, else the estimate), with its tag (SPEC.md §4.3). `edit` (the price window, §4.2)
 // shades its two numbers, each a box once clicked, setting the row's Manual price, and a Manual price has its reset. With
 // none of them, as anywhere else.
 function shownCells(a, b, key, flip, kind, edit = false) {
-  const price = priceSource(scanOf(key), kind, ...key.split(">"));
+  // Estimated shows the estimate itself, scanned or not; Manual, the Manual price, else the scan, else the estimate.
+  const price = priceSource(kind === "estimated" ? {} : scanOf(key), kind, ...key.split(">"));
   if (!price) return ratioCells(a, b, key, flip, "", "no estimated price");
   const v = price.value, digits = price.from === "scan" ? ratioOf(key).digits : null;
   const shown = (i) => fixed(v[i], digits?.[i] ?? decimalsOf(v[i]));
@@ -1069,28 +1070,25 @@ const tabs = (page, modified, onlyModified) => {
 // Market Ratios (SPEC.md §4.3): four tabs, each the currencies with a price of its kind, with search and paging, each
 // showing every line of a currency (vs Chaos and vs Divine) even if only one is of that kind: Competitive (#/market-ratios:
 // Competing Trades scanned in the last 4 hours) and Instant (/available: Available Trades), one column each; Estimated
-// (/estimated: a price with no scan, at its estimate, shown as Estimated Trading uses them) and Manual (/manual: a Manual
-// price, typed in).
+// (/estimated: every currency with an estimate, at it) and Manual (/manual: a Manual price, typed in).
 const RATIO_TABS = { competitive: "Competitive", available: "Instant", estimated: "Estimated", manual: "Manual" };
 const ratioTab = (arg) => (arg in RATIO_TABS ? arg : "competitive");
 const rowsOfLine = ([a, b]) => [rowKey(a, b), rowKey(b, a)];
 const LINE_HAS = {
   competitive: ([a, b]) => isScanned(rowKey(a, b)),
   available: ([a, b]) => isScanned(rowKey(b, a)),
-  estimated: (line) => rowsOfLine(line).some((key) => !isScanned(key) && estimateRatio(...key.split(">"))),
+  estimated: (line) => rowsOfLine(line).some((key) => estimateRatio(...key.split(">"))),
   manual: (line) => rowsOfLine(line).some((key) => manualFor(key)),
 };
 function ratesPage(tab) {
-  // Chaos ↔ Divine leads Estimated whenever it has a price, scanned or estimated (it's in every route).
-  const hubsPriced = (t, g) => !g.id && t === "estimated" && g.lines.some((line) => rowsOfLine(line).some((k) => priceSource(scanOf(k), "estimated", ...k.split(">"))));
-  const has = (t) => (g) => hubsPriced(t, g) || g.lines.some(LINE_HAS[t]);
+  const has = (t) => (g) => g.lines.some(LINE_HAS[t]);
   // Each tab counts currencies (Chaos ↔ Divine as one), as its list and paging do.
   const count = (t) => items().map(itemGroup).filter(has(t)).length + (has(t)(hubGroup()) ? 1 : 0);
   const tabRow = `<div class="tabs">${Object.entries(RATIO_TABS).map(([t, label]) => `<a href="#/market-ratios${t === "competitive" ? "" : `/${t}`}"
     class="${t === tab ? "active" : ""}">${label} (${num(count(t))})</a>`).join("")}</div>`;
   if (!count(tab)) {
     return `${tabRow}<p class="muted">${tab === "competitive" || tab === "available" ? `No ${tab === "competitive" ? "Competing" : "Available"} Trades have been scanned for ${esc(league())} in the last 4 hours. ${importHint()}`
-      : tab === "estimated" ? `No estimated prices for ${esc(league())}: every pair traded lately is scanned.`
+      : tab === "estimated" ? `No estimated prices for ${esc(league())}: nothing has traded in the last 4 hours.`
       : `No manual prices for ${esc(league())}. Set a step's Type to Manual, or type into a price's window, to add one.`}</p>`;
   }
   const found = items().filter((i) => matches(i.name)).map(itemGroup).filter(has(tab));
