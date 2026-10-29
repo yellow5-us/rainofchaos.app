@@ -774,6 +774,42 @@ export const CHECKS = {
     t.eq([$("select.method", row())?.value, cellTags(cell())[0]?.endsWith("m")], ["slow", true], "scanned: Competitive, with its scan's age");
   } },
 
+  // On My Listings the price window's prices can be typed over: the step uses the typed price, tagged manual, and Estimated
+  // Trading doesn't; reset puts it back.
+  listingTyped: { game: "poe1", seed: "stale", hash: `#/item/${CHROM}/estimated`, async run(t) {
+    await ready();
+    const direct = () => routes().find((r) => r.dataset.row === "direct");
+    if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); }
+    const before = text($("table.steps tbody tr", direct()));
+    await click($("[data-add-listing]", direct()));
+    await go("#/my-listings");
+    const row = () => $$("#main table.steps tbody tr")[0], cell = () => $$("td", row())[3];
+    await click($("button.ratio-link[data-pair]", row()));
+    const dlg = () => $("#ratio-dialog");
+    t.ok(dlg()?.open, "the price window opens");
+    // Chromatic ↔ Chaos: Available (Chaos:Chromatic, scanned) then Competing (Chromatic:Chaos, the estimate).
+    const [avail, comp] = [0, 1].map((side) => $$("td.r-tags", $("tbody.dialog-pair tr:last-child", dlg()))[side]);
+    t.eq([avail.textContent.trim().endsWith("m"), comp.textContent.trim()], [true, "estimate"], "prefilled: the scan, and the estimate");
+    t.eq($$("tbody.dialog-pair tr:last-child .manual-edit", dlg()).map(text), ["1", "3.69", "1", "3.5"], "every number editable, prefilled");
+    await click($$("tbody.dialog-pair tr:last-child .manual-edit", dlg())[3]);
+    $("#typed-ratio").value = "3.6";
+    $("#typed-ratio").dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await sleep(50);
+    const tags = $$("td.r-tags", $("tbody.dialog-pair tr:last-child", dlg()));
+    t.eq([tags[1].textContent.replace(/\s+/g, " ").trim(), !!dlg()?.open], ["manual reset", true], "typed: tagged manual, with a reset; the window stays open");
+    $("#dialog-close").click();
+    await waitFor(() => !dlg());
+    t.eq([text(cell()).includes("3.6"), cellTags(cell())], [true, ["manual"]], "the step uses it, tagged manual");
+    await go(`#/item/${CHROM}/estimated`);
+    if (!direct().open) { $("summary", direct()).click(); await waitFor(() => direct().open); }
+    t.eq(text($("table.steps tbody tr", direct())), before, "Estimated Trading doesn't use it");
+    await go("#/my-listings");
+    await click($("button.ratio-link[data-pair]", row()));
+    await click($("[data-typed-reset]", dlg()));
+    t.eq($$("td.r-tags", $("tbody.dialog-pair tr:last-child", dlg()))[1].textContent.trim(), "estimate", "reset: back to the estimate");
+    $("#dialog-close").click();
+  } },
+
   listingManual: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t, seed, page) {
     await ready();
     await click($("[data-add-listing]", routes()[0]));

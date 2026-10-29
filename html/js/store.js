@@ -51,12 +51,27 @@ export function ratioValues(name) {
   return out;
 }
 
-// Forgets the league's prices read before `before` (their rows' orders and reads stay, for listings and the read history).
+// Forgets the league's prices read or typed before `before` (their rows' orders and reads stay, for listings and the read
+// history).
 export function dropOld(name, before) {
-  const ratios = leagueState(name).ratios;
+  const { ratios, typed = {} } = leagueState(name);
   const old = Object.keys(ratios).filter((key) => ratios[key].verifiedAt < before);
   for (const key of old) delete ratios[key];
-  if (old.length) save();
+  const oldTyped = Object.keys(typed).filter((key) => typed[key].at < before);
+  for (const key of oldTyped) delete typed[key];
+  if (old.length || oldTyped.length) save();
+}
+
+// Prices typed into the price window on My Listings (SPEC.md §4.6), `typed: { [rowKey]: { value: [l, r], at } }`: used in
+// Estimated Trading and on My Listings while newer than the row's scan, for SCAN_FOR.
+export const typedOf = (name, key) => leagueState(name).typed?.[key] ?? null;
+export function setTyped(name, key, value) {
+  (leagueState(name).typed ??= {})[key] = { value, at: Date.now() };
+  save();
+}
+export function clearTyped(name, key) {
+  delete leagueState(name).typed?.[key];
+  save();
 }
 
 // A row's orders as last read from the game (SPEC.md §3.2a), from whichever list showed them (a pair's Available Trades
