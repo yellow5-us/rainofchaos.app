@@ -37,6 +37,8 @@ This product isn't affiliated with or endorsed by Grinding Gear Games in any way
 **[SPEC.md](SPEC.md) is the source of truth** for how everything works: ratios, lots, routes, fill time, filters, the
 screenshot reader and the UI. Change it together with the code.
 
+Built with [Claude Code](https://claude.com/claude-code).
+
 ## Running it locally
 
 ```sh
