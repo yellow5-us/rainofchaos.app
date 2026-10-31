@@ -9,8 +9,6 @@ Its prices come from the game itself: Import Market Ratios watches the game's wi
 and reads each pair's prices off the Currency Exchange; a scan is used for 4 hours. The game's public currency-exchange
 history, refreshed every hour, gives volumes, sanity checks and, for pairs not scanned, estimates (Estimated Trading).
 
-The code is at [github.com/yellow5-us/rainofchaos.app](https://github.com/yellow5-us/rainofchaos.app).
-
 This product isn't affiliated with or endorsed by Grinding Gear Games in any way.
 
 ## What it does
