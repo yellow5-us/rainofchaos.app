@@ -319,7 +319,8 @@ export const CHECKS = {
     const link = (a) => [a?.getAttribute("href"), a?.target, a?.rel];
     t.eq(link($("header a.report")), ["https://github.com/yellow5-us/rainofchaos.app/issues/new?template=problem.yml", "_blank", "noopener"], "header Report a Bug link opens a new GitHub issue in a new tab");
     t.eq([text($("header a.report")), $("header a.support")], ["Report a Bug", null], "header Report a Bug link's text, and no Support link");
-    t.eq(link($("#main .guide section:last-child a")), ["https://ko-fi.com/prinny5", "_blank", "noopener"], "Support card links to Ko-fi");
+    t.eq($$("#main .guide section:last-child a").map(link), [["https://github.com/yellow5-us/rainofchaos.app", "_blank", "noopener"],
+      ["https://ko-fi.com/prinny5", "_blank", "noopener"]], "Support card links to the code on GitHub, then Ko-fi");
   } },
 
   homePoe2: { game: "poe2", seed: "empty", hash: "#/home", async run(t) {
