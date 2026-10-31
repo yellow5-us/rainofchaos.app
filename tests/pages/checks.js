@@ -1237,6 +1237,19 @@ export const CHECKS = {
     }
   } },
 
+  // A scan re-sorts an item page's routes at once, the import window still open: their order is the one the page opens with.
+  resortOnScan: { game: "poe1", seed: "fresh", hash: `#/item/${SULPHUR}/competitive`, async run(t) {
+    await ready();
+    const order = () => routes().map((r) => r.dataset.row);
+    const before = order();
+    const r = await importFrom("/tests/snips/sulphur-millions-window.png", /Imported prices/);
+    t.ok(/Imported prices/.test(r.status), "imported", r.status);
+    const after = order();
+    await go("#/volumes");
+    await go(`#/item/${SULPHUR}/competitive`);
+    t.eq(after, order(), `in the order the page opens with (before the scan: ${before.join(", ")})`);
+  } },
+
   importCancel: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(null, /Sharing was cancelled/);

@@ -49,7 +49,6 @@ const METHOD_NAMES = { [FAST]: "Instant", [SLOW]: "Competitive", [MANUAL]: "Manu
 const DEFAULT_MODE = "competitive";
 let editLines = null; // [[a, b], ...] ratio lines open in the dialog
 let editingManual = null; // "where|rowKey|side": the Manual price's number being typed (side 0 or 1 of the row), and where
-let resortOnClose = false; // a ratio changed: re-sort the item page's routes once the dialog closes or the import window hides
 // Import Market Ratios' state (SPEC.md §4.3, §4.7): { watch } while watching the game (its stream, video, timers and
 // readings), else what its status line says ({ note, warn } or { error }), or {} before anything's happened.
 let live = {};
@@ -1262,13 +1261,10 @@ function stopLive() {
   closeLive();
   hideWindow(true);
 }
-// The import window hidden to its strip, or shown: hidden, an item page's routes re-sort if a scan changed a price.
+// The import window hidden to its strip, or shown.
 function hideWindow(hidden) {
   windowHidden = hidden;
-  if (!hidden) return;
-  panelHelp = false;
-  if (resortOnClose) routeOrder.clear();
-  resortOnClose = false;
+  if (hidden) panelHelp = false;
 }
 
 // The price window: Market/Alt ratios for the pairs in editLines (from a Ratio cell or header). Lives inside main;
@@ -1702,7 +1698,7 @@ function useRead(pair, found) {
   const none = found.empty === "available" ? rowKey(have, want) : found.empty === "competing" ? rowKey(want, have) : null;
   if (none && !(found.empty === "competing" && ratioOf(none)?.value)) store.setEmpty(league(), none);
   store.save();
-  resortOnClose = true; // the routes behind re-sort when the dialog closes
+  routeOrder.clear(); // the item page's routes re-sort at once (what changed lights up)
   markNext = true;
 }
 
@@ -2142,7 +2138,6 @@ window.addEventListener("hashchange", (e) => {
   cancelling = null;
   editingManual = null;
   endDialog();
-  resortOnClose = false;
   routeOrder.clear();
   routeOpen.clear();
   routeFold.clear();
