@@ -1250,6 +1250,21 @@ export const CHECKS = {
     t.eq(after, order(), `in the order the page opens with (before the scan: ${before.join(", ")})`);
   } },
 
+  // A listing whose first step isn't started takes the time of a scan of one of its pairs; one not trading that pair keeps
+  // its own.
+  listingScanTime: { game: "poe1", seed: "listedOld", hash: "#/listings", async run(t) {
+    await ready();
+    const day = (ms) => { const d = new Date(ms), two = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`; };
+    const timeOf = (id) => text($(".listing-times", $(`section[data-row="listing-${id}"]`).parentElement));
+    const old = day(Date.now() - 2 * 86400000);
+    t.eq([timeOf("via"), timeOf("direct")].map((s) => s.slice(0, 10)), [old, old], "both show when they were added");
+    const r = await importFrom("/tests/snips/size-full.png", /Imported prices/);
+    t.ok(/Imported prices/.test(r.status), "Chaos ↔ Divine imported", r.status);
+    await waitFor(() => timeOf("via").startsWith(day(Date.now())));
+    t.eq([timeOf("via").slice(0, 10), timeOf("direct").slice(0, 10)], [day(Date.now()), old],
+      "the one trading Chaos ↔ Divine now shows the scan's time; the direct one keeps its own");
+  } },
+
   importCancel: { game: "poe1", seed: "empty", hash: "#/market-ratios", async run(t) {
     await ready();
     const r = await importFrom(null, /Sharing was cancelled/);

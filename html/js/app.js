@@ -979,10 +979,10 @@ function listingBox(l) {
   // The route's path as on the item page.
   const path = pathOf(l).map(iconOnly).join(" → ");
   // Above the box: what it started with and the profit projected when it was added (neither ever changes); once completed,
-  // the profit it made; and when it was added (and completed).
+  // the profit it made; and when it was added, or last scanned before its first step started (and completed).
   const actual = l.completed && !r.missing
     ? `<span class="apart"><b>Profit</b> <b class="${signClass(r.rank)}">${profit(r)}</b></span>` : "";
-  const meta = `<div class="listing-meta"><span><b>Start</b> <b>${qty(l.start, l.base)}</b><span class="apart"><b>Projected</b> <b class="${signClass(l.expected.rank)}">${profit({ ...l.expected, base: l.base })}</b></span>${actual}</span><span class="listing-times">${listingTime(l.added)}${
+  const meta = `<div class="listing-meta"><span><b>Start</b> <b>${qty(l.start, l.base)}</b><span class="apart"><b>Projected</b> <b class="${signClass(l.expected.rank)}">${profit({ ...l.expected, base: l.base })}</b></span>${actual}</span><span class="listing-times">${listingTime(Math.max(l.added, l.scannedAt ?? 0))}${
     l.completed ? ` <span class="range-dash">-</span> ${listingTime(l.completedAt)}` : ""}</span></div>`;
   const wrap = (body) => `<div class="listing">${meta}<section class="other" data-row="listing-${l.id}">${body}${foot}</section></div>`;
   // Completed only once every step is done.
@@ -1697,6 +1697,12 @@ function useRead(pair, found) {
   const [want, have] = pair;
   const none = found.empty === "available" ? rowKey(have, want) : found.empty === "competing" ? rowKey(want, have) : null;
   if (none && !(found.empty === "competing" && ratioOf(none)?.value)) store.setEmpty(league(), none);
+  // An active listing not started yet that trades this pair was priced again now: its time says so (listingBox).
+  const at = Date.now();
+  for (const l of leagueListings(false)) {
+    const path = pathOf(l);
+    if (l.steps[0].state === "waiting" && path.slice(1).some((x, i) => (x === want && path[i] === have) || (x === have && path[i] === want))) l.scannedAt = at;
+  }
   store.save();
   routeOrder.clear(); // the item page's routes re-sort at once (what changed lights up)
   markNext = true;
