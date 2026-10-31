@@ -81,6 +81,14 @@ export const SEEDS = {
   },
   // As fresh, starting from 3 Chaos: not enough for one Chromatic (3.4 Chaos each).
   poor: (now) => ({ ...SEEDS.fresh(now), start: { [C]: 3, [D]: 25 } }),
+  // As fresh, with two listings of Chromatic added two days ago, nothing started: via Divine (trading Chaos ↔ Divine), and
+  // direct (not).
+  listedOld: (now) => ({ ...SEEDS.fresh(now), listings: [`after:${D}`, "direct"].map((routeId) => ({
+    id: routeId === "direct" ? "direct" : "via", league: LEAGUE.poe1, item: CHROM, routeId, base: C, start: 10000, mode: "competitive",
+    added: now - 2 * 86400000, completed: false, expected: { gain: 0, leftovers: [], rank: 0 },
+    methods: routeId === "direct" ? ["slow", "slow"] : ["slow", "slow", "slow"],
+    steps: (routeId === "direct" ? [0, 1] : [0, 1, 2]).map(() => ({ state: "waiting" })),
+  })) }),
   // Only Chaos ↔ Divine read.
   gap: (now) => poe1(HUBS1, now),
   // Only Vivid ↔ Divine read, starting from Divine: Divine → Vivid → Divine trades nothing else.
