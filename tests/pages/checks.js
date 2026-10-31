@@ -1518,6 +1518,22 @@ export const CHECKS = {
       "worked out, with a profit", text(row));
   } },
 
+  // A route the starting amount can't afford is Untradeable, tagged with how much it needs; on its item page it can't be
+  // done and can't be added to Listings.
+  unaffordable: { game: "poe1", seed: "poor", hash: "#/recommendations", async run(t) {
+    await ready();
+    const sections = await openSections();
+    t.ok(sections.untradeable?.includes(`${CHROM}|direct`), "Chromatic's direct route is Untradeable", JSON.stringify(sections));
+    const tag = $(".tag", tradeRow(CHROM, "direct").cells[COL.profit]);
+    const needs = numbers(text(tag))[0];
+    t.ok(/^needs Chaos Orb [\d,]+ to start$/.test(text(tag)) && needs > 3, "tagged with how much it needs", text(tag));
+    await go(`#/item/${CHROM}/competitive`);
+    const box = routes().find((r) => r.dataset.row === "direct");
+    t.ok(/^Can't be done: the Starting Amount can't buy one of a trade\. needs Chaos Orb [\d,]+ to start$/.test(text($(".route-steps > summary", box))),
+      "item page: can't be done, and how much it needs", text($(".route-steps > summary", box)));
+    t.eq([$("[data-add-listing]", box), box.classList.contains("top")], [null, false], "no Add to Listings, not highlighted");
+  } },
+
   tradesPoe2: { game: "poe2", seed: "poe2", hash: "#/recommendations", async run(t) {
     await ready();
     t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),

@@ -79,6 +79,8 @@ export const SEEDS = {
     seed.leagues[seed.league].ratios[`${C}>${VIVID}`] = { value: null, empty: true, verifiedAt: now - 2 * 60000 };
     return seed;
   },
+  // As fresh, starting from 3 Chaos: not enough for one Chromatic (3.4 Chaos each).
+  poor: (now) => ({ ...SEEDS.fresh(now), start: { [C]: 3, [D]: 25 } }),
   // Only Chaos ↔ Divine read.
   gap: (now) => poe1(HUBS1, now),
   // Only Vivid ↔ Divine read, starting from Divine: Divine → Vivid → Divine trades nothing else.

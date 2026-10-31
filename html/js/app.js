@@ -2,7 +2,7 @@
 // #/recommendations (Competitive Trading), with /available for Instant Trading and /estimated for Estimated Trading,
 // #/item/<id>/<mode>, #/listings (Active tab), #/listings/completed, #/volumes, #/market-ratios.
 import {
-  allResults, better, drain, ESTIMATE, estimateRatio, FAST, priceOf, priceSource, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
+  allResults, better, drain, neededStart, ESTIMATE, estimateRatio, FAST, priceOf, priceSource, goldCost, leg, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, sameRatio, setAhead, setBooks,
   rowOf, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SIDE_SHARE, SLOW, stepKey as pathKey,
 } from "./calc.js";
 import {
@@ -87,7 +87,7 @@ const titled = (id) => `${icon(id)}${esc(nameOf(id))}`;
 const qty = (n, id) => `${icon(id)}${num(n)}`;
 
 // A result is only worth doing if it gains something; zero and negative results are shown greyed out.
-const profitable = (r) => !r.missing && !r.blocked && r.rank > 0;
+const profitable = (r) => !r.missing && !r.blocked && !r.unaffordable && r.rank > 0;
 // In-game wording for a direction with no open orders, by the column/method that reads it.
 const noOrdersTag = (available) => `<span class="tag warn">no ${available ? "available" : "competing"} trades</span>`;
 // An Instant step whose price has less than its own size on offer behind it.
@@ -125,6 +125,13 @@ const emptyIn = (r) => !!ratioOf(r.missing)?.empty;
 const missingText = (r, hint = "") => `<p>${missingTag(r)} ${emptyIn(r) ? "The game showed no trades for"
   : r.estimate ? "Not scanned, and no trades in the last hours:" : "Not read from the game yet:"} ${
   r.missing.split(">").map(iconOnly).join(" : ")}.${emptyIn(r) || !hint ? "" : ` ${hint}`}</p>`;
+// A route the starting amount can't afford: how much it needs (calc.js neededStart), worked out only when drawn.
+// `perStep`, `estimate`: as it was worked out with.
+const needsTag = (item, r, perStep = {}, estimate = false) => {
+  const n = neededStart(ratios(), item.id, r.route, r.method, start(), perStep, r.base, estimate);
+  return `<span class="tag warn" title="Your Starting Amount can't buy one of a trade on this route">${
+    n == null ? "can't afford" : `needs ${qty(n, r.base)} to start`}</span>`;
+};
 const missingTag = (r) => (emptyIn(r) ? noOrdersTag(r.method === FAST)
   : `<span class="tag warn">${r.estimate ? "no estimated price" : "not scanned"}</span>`);
 // Tags in table cells go on their own line under the value they're about, so the values stay lined up.
@@ -558,8 +565,9 @@ function summaryPage(mode) {
     const link = `<a href="#/item/${item.id}/${mode}" data-pick-route="${item.id}|${result.route.id}">${titled(item.id)}</a>`;
     // The route's scan age tag (its oldest price), in a narrow column of its own so the tags line up.
     const scanned = `<td class="age">${tag}</td>`;
-    if (result.missing) {
-      return `<tr class="losing" data-row="${key}"><td>${link}</td>${scanned}<td colspan="5">${missingTag(result)}</td></tr>`;
+    if (result.missing || result.unaffordable) {
+      const tag = result.missing ? missingTag(result) : needsTag(item, result, {}, estimate);
+      return `<tr class="losing" data-row="${key}"><td>${link}</td>${scanned}<td colspan="5">${tag}</td></tr>`;
     }
     return `<tr class="${profitable(result) ? "" : "losing"}" data-row="${key}">
       <td>${link}</td>
@@ -580,8 +588,9 @@ function summaryPage(mode) {
     ? `<details class="section" data-section="${key}"${sectionOpen(key) ? " open" : ""}>
       <summary><h2>${title} <span class="muted">(${num(list.length)})</span></h2></summary>
       ${!sectionOpen(key) ? "" : list.length ? table(list) : `<p class="muted">${empty}</p>`}</details>` : "");
-  // Untradeable: an Instant trade has nothing, or too little, on offer to fill, or a price is missing.
-  const untradeable = (r) => r.result.missing || r.result.blocked;
+  // Untradeable: an Instant trade has nothing, or too little, on offer to fill, a price is missing, or the starting amount
+  // can't afford it.
+  const untradeable = (r) => r.result.missing || r.result.blocked || r.result.unaffordable;
   const good = rows.filter((r) => profitable(r.result));
   const blocked = rows.filter(untradeable);
   const losing = rows.filter((r) => !profitable(r.result) && !untradeable(r));
@@ -615,7 +624,7 @@ let pickedRoute = {};
 // An item's routes, most profit a minute first (a stable sort, so ties and routes with no rate keep their profit order);
 // routes that can't be done or are missing a price have no rate.
 const byPerMinute = (results) => results.sort((x, y) => {
-  const [a, b] = [x, y].map((r) => (r.blocked ? null : perMinute(r, r.gainRank)));
+  const [a, b] = [x, y].map((r) => (r.blocked || r.unaffordable ? null : perMinute(r, r.gainRank)));
   return a == null || b == null ? (a == null) - (b == null) : b - a;
 });
 
@@ -666,17 +675,18 @@ function itemPage(id, mode) {
     ? fold(r, " losing", `<h3>${routeLabel(r, item)}</h3>`, missingText(r, importHint()))
     : fold(r, `${profitable(r) ? "" : " losing"}${r === top ? " top" : ""}`, `<h3 class="split"><span>${routeSummary(r)}</span>
           <span>${routeLabel(r, item)}</span></h3>`,
-        (stuck(r) ? stuckSteps(r) : stepsHtml(r)) + addListingFoot(item, r));
-  // A route that can't be done for want of stock (a main trade with no orders on its side, or too little on offer)
-  // or with one lot over the limit shows its steps folded under one line saying why; opened, it stays open while on
-  // the page. (One the starting amount can't afford isn't listed at all: allResults leaves it out.)
-  const stuck = (r) => (r.steps.some((x) => x.noOrders) ? "a trade has no available orders"
+        (stuck(r) ? stuckSteps(r) : stepsHtml(r)) + (r.unaffordable ? "" : addListingFoot(item, r)));
+  // A route that can't be done for want of stock (a main trade with no orders on its side, or too little on offer),
+  // with one lot over the limit, or that the starting amount can't afford shows its steps folded under one line saying
+  // why; opened, it stays open while on the page.
+  const stuck = (r) => (r.unaffordable ? "the Starting Amount can't buy one of a trade"
+    : r.steps.some((x) => x.noOrders) ? "a trade has no available orders"
     : r.steps.some((x) => x.thin) ? `not enough on offer for a trade at this starting amount`
     : r.steps.some((x) => !x.lots && x.tooBig) ? `one unit is over the ${num(MAX_ORDER)} limit` : null);
   const stuckSteps = (r) => {
     const key = `${item.id}|${mode}|${baseId()}|${r.route.id}`;
     return `<details class="route-steps" data-route-open="${esc(key)}"${routeOpen.has(key) ? " open" : ""}>
-        <summary class="muted">Can't be done: ${stuck(r)}.</summary>
+        <summary class="muted">Can't be done: ${stuck(r)}.${r.unaffordable ? ` ${needsTag(item, r, methodsFor(item.id, mode)[r.route.id], estimate)}` : ""}</summary>
         ${stepsHtml(r)}</details>`;
   };
 
@@ -685,8 +695,7 @@ function itemPage(id, mode) {
     <h1>${titled(item.id)}${tradeTag(item.id, estimate)} <span class="muted item-volume">${volumeHtml(item.id)} traded last hour</span></h1>
     ${modeTabs(mode, (m) => `#/item/${item.id}/${m}`, item.id)}
     ${results.length ? results.map(box).join("")
-      : estimate && tradeKeys(item.id).every(isScanned) ? `<p class="muted">Every trade of ${esc(item.name)} is scanned: see Competitive and Instant Trading.</p>`
-      : `<p class="muted">Not enough starting ${esc(hubName(baseId()))}</p>`}
+      : `<p class="muted">Every trade of ${esc(item.name)} is scanned: see Competitive and Instant Trading.</p>`}
 `;
 }
 
@@ -1049,7 +1058,7 @@ function addListing(item, mode, routeId) {
   const { method, estimate = false } = MODES[mode];
   const r = allResults(ratios(), item.id, start(), method, methodsFor(item.id, mode), baseId(), estimate)
     .find((x) => x.route.id === routeId);
-  if (!r || r.missing) return;
+  if (!r || r.missing || r.unaffordable) return;
   listings().push({
     id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, league: league(), item: item.id, routeId,
     base: baseId(), start: start(), mode, added: Date.now(), completed: false,
