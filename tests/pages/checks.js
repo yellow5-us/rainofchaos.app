@@ -1521,7 +1521,7 @@ export const CHECKS = {
   tradesPoe2: { game: "poe2", seed: "poe2", hash: "#/recommendations", async run(t) {
     await ready();
     t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),
-      [["Exalted", true], ["Divine", false]], "start with Exalted or Divine, not Chaos");
+      [["Divine", false], ["Exalted", true]], "start with Divine or Exalted, not Chaos; Exalted as saved");
     const sections = await openSections();
     t.eq(Object.values(sections).flat().sort(), [
       `${ANNUL}|after:${D}`, `${ANNUL}|before:${D}`, `${ANNUL}|direct`, `${C}|after:${D}`, `${C}|before:${D}`, `${C}|direct`, `${D}|direct`,
@@ -1534,7 +1534,7 @@ export const CHECKS = {
   poe2SavedChaos: { game: "poe2", seed: "poe2Chaos", hash: "#/recommendations", async run(t) {
     await ready();
     t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),
-      [["Exalted", true], ["Divine", false]], "a saved Chaos start falls back to Exalted");
+      [["Divine", true], ["Exalted", false]], "a saved Chaos start falls back to Divine");
   } },
 
   clipboard: { game: "poe1", seed: "fresh", hash: `#/item/${CHROM}/competitive`, async run(t) {

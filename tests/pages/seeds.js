@@ -85,7 +85,8 @@ export const SEEDS = {
   vividOnly: (now) => ({ ...poe1(ITEMS1.filter(([key]) => key.includes(VIVID) && key.includes(D)), now), base: D }),
   // Only Chaos ↔ Divine, read 5 hours ago (no longer used).
   gapOld: (now) => poe1(HUBS1, now, { [`${C}>${D}`]: 300, [`${D}>${C}`]: 300 }),
-  poe2: (now) => state("poe2", scans([...HUBS2, ...ITEMS2], now)),
+  // Saved while Exalted was picked to start with.
+  poe2: (now) => state("poe2", scans([...HUBS2, ...ITEMS2], now), { base: E }),
   // As poe2, saved while Chaos was picked to start with.
   poe2Chaos: (now) => state("poe2", scans([...HUBS2, ...ITEMS2], now), { base: C }),
   // Alchemy Shard ↔ Chaos read 5 hours ago, both ways (prices near the one-list captures' 1 : 1): no longer used, so a
