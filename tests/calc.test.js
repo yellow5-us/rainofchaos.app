@@ -353,15 +353,18 @@ eq([direct3.steps.map((s) => [s.recv, s.received, s.given, s.extra]), direct3.ga
   [[["X", 450, 10, 0], [DIVINE, 11, 440, 10]], 1, [["X", 10]], 1.25],
   "three hubs: the X left over is kept, valued at what it sells for in exalted");
 // Exalted → X → Exalted buys 500 X for 1,000 ex and sells them (lot 5 ex : 2 X) for 1,250 ex: +250 ex, ranked as
-// 2.5 div at 100 ex per div. Ending in Exalted needs every other hub's rate to Exalted, so Chaos ↔ Exalted too.
-eq(runRoute(hub3, "X", routesFor(EXALTED).at(-1), SLOW, 1000, {}, EXALTED).missing, rowKey(EXALTED, CHAOS),
-  "three hubs, exalted start: needs chaos → exalted");
-const hub3x = { ...hub3, ...Object.fromEntries([r(EXALTED, CHAOS, [69, 1]), r(CHAOS, EXALTED, [1, 69])]) };
-const back3 = runRoute(hub3x, "X", routesFor(EXALTED).at(-1), SLOW, 1000, {}, EXALTED);
-eq([back3.gain, back3.rank, back3.base], [250, 2.5, EXALTED], "three hubs: exalted start, +250 ex = 2.5 div");
+// 2.5 div at 100 ex per div. Nothing is left over, so Chaos ↔ Exalted, which no step trades, isn't needed.
+const back3 = runRoute(hub3, "X", routesFor(EXALTED).at(-1), SLOW, 1000, {}, EXALTED);
+eq([back3.missing, back3.gain, back3.rank, back3.base], [undefined, 250, 2.5, EXALTED], "three hubs: exalted start, +250 ex = 2.5 div, no chaos price needed");
+eq(runRoute({ ...hub3, [rowKey(DIVINE, EXALTED)]: undefined }, "X", routesFor(EXALTED).at(-1), SLOW, 1000, {}, EXALTED).missing,
+  rowKey(DIVINE, EXALTED), "three hubs: exalted start, its rank in div needs exalted → div");
 delete hub3[rowKey(DIVINE, CHAOS)];
-eq(runRoute(hub3, "X", routesFor(DIVINE).at(-1), SLOW, 10, {}, DIVINE).missing, rowKey(DIVINE, CHAOS),
-  "three hubs: every hub's rate to div is needed");
+eq(runRoute(hub3, "X", routesFor(DIVINE).at(-1), SLOW, 10, {}, DIVINE).rank, 1.25, "three hubs: a hub no step trades isn't needed");
+// What's left over is only ranked, so a price it needs that isn't scanned (and has no estimate) doesn't stop the route:
+// the 10 X with no X → Exalted price are worth nothing.
+const unsold = runRoute({ ...hub3, [rowKey(EXALTED, "X")]: undefined }, "X", routesFor(DIVINE).at(-1), SLOW, 10, {}, DIVINE);
+eq([unsold.missing, unsold.gain, unsold.leftovers, unsold.rank], [undefined, 1, [["X", 10]], 1],
+  "three hubs: the X left over with no price to sell it is worth nothing");
 setCurrencies({ hubs: [CHAOS, DIVINE], end: DIVINE, sellTo: CHAOS });
 
 // --- a hub as the item (SPEC.md §3.1): routes that receive a currency twice are dropped ---

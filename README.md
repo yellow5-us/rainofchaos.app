@@ -1,13 +1,15 @@
 # rainofchaos
 
 **[rainofchaos.app](https://rainofchaos.app)** finds profitable round trips on Path of Exile's Currency Exchange: start
-with Chaos or Divine Orbs, buy a currency, sell it, and end with more of what you started with (Exalted or Divine Orbs
+with Divine or Chaos Orbs, buy a currency, sell it, and end with more of what you started with (Exalted or Divine Orbs
 in Path of Exile 2), for Path of Exile 1 and Path of Exile 2 on the PC realm. Reading prices from Path of Exile 2 isn't
 fully tested yet.
 
 Its prices come from the game itself: Import Market Ratios watches the game's window (shared from the browser)
 and reads each pair's prices off the Currency Exchange; a scan is used for 4 hours. The game's public currency-exchange
 history, refreshed every hour, gives volumes, sanity checks and, for pairs not scanned, estimates (Estimated Trading).
+
+The code is at [github.com/yellow5-us/rainofchaos.app](https://github.com/yellow5-us/rainofchaos.app).
 
 This product isn't affiliated with or endorsed by Grinding Gear Games in any way.
 

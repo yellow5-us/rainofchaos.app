@@ -9,7 +9,7 @@ export const GAMES = {
     hubs: [CHAOS, DIVINE], // display order, e.g. on Market Ratios and in an item page's volume
     end: DIVINE, // every route ends in Divine: the goal is always more div
     sellTo: CHAOS, // extra items are sold for Chaos
-    starts: [CHAOS, DIVINE], // the Starting Amount toggle, in order; the first is the default
+    starts: [DIVINE, CHAOS], // the Starting Amount toggle, in order; the first is the default
     defaultAmounts: { [CHAOS]: 1000, [DIVINE]: 25 },
     example: "DivinationCardDeck", // Stacked Deck: the currency the steps for scanning a trade use as their example
     window: "poe1", // how the Currency Exchange window looks, for finding it in the game (js/snip.js, WINDOWS)
