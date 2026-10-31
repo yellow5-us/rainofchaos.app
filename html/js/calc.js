@@ -449,11 +449,28 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
     // An Instant trade with nothing, or too little, on offer to fill is the one thing that stops a route.
     blocked: steps.some((s) => s.noOrders || s.thin),
     // The starting amount too small for it: the first trade that trades nothing can't afford one unit (not a lot over
-    // the cap, nor too little on offer). Such a route isn't one at all (allResults leaves it out).
+    // the cap, nor too little on offer). It can't be done (neededStart: how much it needs).
     unaffordable: (() => { const s = steps.find((x) => !x.lots); return !!s && !s.tooBig && s.have > 0; })(),
     rank,
     gainRank: gain / perDiv, // the gain alone in div: what profit per minute sorts by
   };
+}
+
+// The smallest starting amount, in whole units of the base, that affords every trade of a route `start` can't
+// (runRoute's unaffordable), for the same arguments; null when even a trillion can't.
+export function neededStart(ratios, item, route, method, start, perStep = {}, base = DIVINE, estimate = false) {
+  const affords = (n) => !runRoute(ratios, item, route, method, n, perStep, base, [], estimate).unaffordable;
+  let lo = Math.floor(start), hi = Math.max(1, 2 * lo);
+  while (!affords(hi)) {
+    if (hi > 1e12) return null;
+    [lo, hi] = [hi, 2 * hi];
+  }
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (affords(mid)) hi = mid;
+    else lo = mid;
+  }
+  return hi;
 }
 
 // One result per route, best first; routes with missing ratios sort last. Every route uses `method`, except steps
@@ -461,9 +478,7 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
 export function allResults(ratios, item, start, method, perStepByRoute = {}, base = DIVINE, estimate = false) {
   // No step trades a currency for itself (SPEC.md §3.1), e.g. Div → Chaos → Chaos → Div when the item is Chaos.
   const routes = routesFor(base).filter((r) => [base, ...r.path(item)].every((x, i, p) => x !== p[i - 1]));
-  // A route the starting amount can't afford isn't offered at all (SPEC.md §4.2).
-  const results = routes.map((r) => runRoute(ratios, item, r, method, start, perStepByRoute[r.id], base, [], estimate))
-    .filter((r) => !r.unaffordable);
-  const sortRank = (r) => (r.missing || r.blocked ? -Infinity : r.rank);
+  const results = routes.map((r) => runRoute(ratios, item, r, method, start, perStepByRoute[r.id], base, [], estimate));
+  const sortRank = (r) => (r.missing || r.blocked || r.unaffordable ? -Infinity : r.rank);
   return results.sort((x, y) => (x.missing ? 1 : 0) - (y.missing ? 1 : 0) || sortRank(y) - sortRank(x));
 }

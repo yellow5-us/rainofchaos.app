@@ -1,6 +1,6 @@
 // Runs in the browser (tests/index.html) or headless with macOS's JavaScriptCore:
 //   /System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc -m tests/calc.test.js
-import { allResults, ESTIMATE, estimateRatio, leg, priceSource, lot, MANUAL, MAX_ORDER, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
+import { allResults, ESTIMATE, estimateRatio, leg, priceSource, lot, MANUAL, MAX_ORDER, neededStart, roundHalfUp, routesFor, runRoute, setAhead, setBooks, setBought, setEstimate, setManual, setNoOrders, setPerHour, setReadEmpty, setStock, setUndercut, setUsual, SLOW, FAST, stepKey } from "../html/js/calc.js";
 import { CHAOS, DIVINE, EXALTED, rowKey, setCurrencies, setGold } from "../html/js/items.js";
 import { boughtRate, undercutRate } from "../html/js/undercut.js";
 
@@ -118,8 +118,14 @@ eq(runRoute(ratios, CHROM, ROUTES_C[2], SLOW, 10, {}, CHAOS).steps[0].orders, [{
 const halfway = runRoute(ratios, VIVID, ROUTES_C[0], SLOW, 300, {}, CHAOS);
 eq([halfway.steps[0].lots > 0, halfway.steps[1].lots, halfway.unaffordable], [true, 0, true], "a later main trade short of one unit: unaffordable");
 eq(runRoute(ratios, VIVID, ROUTES_C[0], SLOW, 1000, {}, CHAOS).unaffordable, false, "enough for every trade: affordable");
-eq(allResults(ratios, VIVID, 300, SLOW, {}, CHAOS).some((r) => r.route.id === ROUTES_C[0].id), false, "allResults leaves unaffordable routes out");
-eq(allResults(ratios, CHROM, 3, SLOW, {}, CHAOS), [], "nothing affordable: no routes at all");
+const poorAll = allResults(ratios, VIVID, 300, SLOW, {}, CHAOS);
+eq([poorAll.length, poorAll.find((r) => r.route.id === ROUTES_C[0].id).unaffordable, poorAll.findIndex((r) => r.unaffordable) > 0],
+  [3, true, true], "allResults keeps an unaffordable route, after the ones that can be done");
+// How much it needs: the smallest starting amount that affords every trade, and one less doesn't.
+for (const [id, route, have] of [[CHROM, ROUTES_C[0], 3], [VIVID, ROUTES_C[0], 300]]) {
+  const n = neededStart(ratios, id, route, SLOW, have, {}, CHAOS), affords = (x) => !runRoute(ratios, id, route, SLOW, x, {}, CHAOS).unaffordable;
+  eq([n > have, affords(n), affords(n - 1)], [true, true, false], `${id} from ${have}c: needs ${n}c, and not ${n - 1}c`);
+}
 // An extra divine partway (Chaos mode R2's div → item leg) is kept as it is, and worth its chaos when ranking.
 const oddDiv = { ...ratios, [rowKey(CHROM, DIVINE)]: [1, 2.5] }; // lot 2 chrom : 5 div, so 27 div leave 2, short of 2.505
 const c2odd = runRoute(oddDiv, CHROM, ROUTES_C[1], SLOW, 10000, {}, CHAOS);
