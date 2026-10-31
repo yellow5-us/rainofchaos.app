@@ -81,6 +81,8 @@ export const SEEDS = {
   },
   // Only Chaos ↔ Divine read.
   gap: (now) => poe1(HUBS1, now),
+  // Only Vivid ↔ Divine read, starting from Divine: Divine → Vivid → Divine trades nothing else.
+  vividOnly: (now) => ({ ...poe1(ITEMS1.filter(([key]) => key.includes(VIVID) && key.includes(D)), now), base: D }),
   // Only Chaos ↔ Divine, read 5 hours ago (no longer used).
   gapOld: (now) => poe1(HUBS1, now, { [`${C}>${D}`]: 300, [`${D}>${C}`]: 300 }),
   poe2: (now) => state("poe2", scans([...HUBS2, ...ITEMS2], now)),

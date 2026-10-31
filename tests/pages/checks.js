@@ -1499,6 +1499,24 @@ export const CHECKS = {
     t.ok(!$("[data-gold-edit], input[data-gold]"), "no gold fee editor anywhere");
   } },
 
+  // PoE1 starts from Divine, then Chaos.
+  startsPoe1: { game: "poe1", seed: "empty", hash: "#/recommendations", async run(t) {
+    await ready();
+    t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),
+      [["Divine", true], ["Chaos", false]], "Divine first, and picked to begin with");
+  } },
+
+  // A route is scanned by the prices it trades at alone: what's left over is only ranked, so Divine → Vivid → Divine with
+  // only Divine ↔ Vivid scanned is worked out on Competitive Trading, not held up by Chaos's prices.
+  scannedRouteOnly: { game: "poe1", seed: "vividOnly", hash: "#/recommendations", async run(t) {
+    await ready();
+    const sections = await openSections();
+    t.eq(Object.values(sections).flat(), [`${VIVID}|direct`], "Competitive: just Divine → Vivid → Divine");
+    const row = tradeRow(VIVID, "direct");
+    t.ok(row && !text(row).includes("Not read") && !text(row).includes("not scanned") && numbers(text(row.cells[COL.profit])).length,
+      "worked out, with a profit", text(row));
+  } },
+
   tradesPoe2: { game: "poe2", seed: "poe2", hash: "#/recommendations", async run(t) {
     await ready();
     t.eq($$(".base-toggle button").map((b) => [b.title, b.classList.contains("active")]),

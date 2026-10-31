@@ -401,22 +401,21 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
 
   // What's left over is worth something, for ranking only (nothing more is traded): a hub at the ratio of the row
   // converting it to the base would use (an order book's best price is that ratio too); an item at what it would sell
-  // for into the sell-to hub (Chaos in PoE1; whole units, so a few may be worth nothing), then that hub's worth.
-  // Units of `give` per unit of `recv` at the row's ratio, or the row's key when it has none.
+  // for into the sell-to hub (Chaos in PoE1; whole units, so a few may be worth nothing), then that hub's worth. These
+  // prices only rank the route, so one not scanned is its estimate, and with none, what needs it is worth nothing.
+  // Units of `give` per unit of `recv` at the row's ratio, or null.
   const rate = (recv, give) => {
-    const key = rowOf(method, recv, give), l = ratios[key] && lot(ratios[key]);
-    if (l) return { per: posts(method) ? l[1] / l[0] : l[0] / l[1] };
-    const e = estimate && estimateRatio(recv, give), el = e && lot(e); // an estimate's row is recv:give
-    return el ? { per: el[1] / el[0] } : { missing: key };
+    const row = ratios[rowOf(method, recv, give)], l = row && lot(row);
+    if (l) return posts(method) ? l[1] / l[0] : l[0] / l[1];
+    const e = estimateRatio(recv, give), el = e && lot(e); // an estimate's row is recv:give
+    return el ? el[1] / el[0] : null;
   };
-  const perBase = {}; // hub -> units per base
-  for (const h of hubs) {
-    if (h === base) continue;
-    const c = rate(base, h);
-    if (c.missing) return missing(c.missing);
-    perBase[h] = c.per;
-  }
-  const inBase = (h, n) => (h === base ? n : n / perBase[h]);
+  // n of hub h in the base, or 0 without a price.
+  const inBase = (h, n) => {
+    if (h === base) return n;
+    const per = rate(base, h);
+    return per ? n / per : 0;
+  };
   let worth = 0;
   for (const [id, n] of left) {
     if (hubs.includes(id)) {
@@ -424,19 +423,17 @@ export function runRoute(ratios, item, route, method, start, perStep = {}, base 
       continue;
     }
     let s = leg(ratios, method, sellTo, id, n);
-    if (s.missing && estimate) s = leg(ratios, ESTIMATE, sellTo, id, n);
     if (s.missing && readEmpty(s.missing)) continue; // nobody to sell it to: worth nothing
-    if (s.missing) return missing(s.missing);
-    worth += inBase(sellTo, s.received);
+    if (s.missing) s = leg(ratios, ESTIMATE, sellTo, id, n);
+    if (!s.missing) worth += inBase(sellTo, s.received);
   }
   const spent = steps[0].given;
   const gain = steps.at(-1).received + kept - spent; // in the base (the start currency)
   const value = gain + worth; // in the base
   let perDiv = 1; // base per div
   if (base !== end) {
-    const c = rate(end, base);
-    if (c.missing) return missing(c.missing);
-    perDiv = c.per;
+    perDiv = rate(end, base);
+    if (!perDiv) return missing(rowOf(method, end, base));
   }
   const rank = value / perDiv; // in div, for sorting
   // The trades happen one after another, so the route's fill time is their sum, unknown when any one's is.
