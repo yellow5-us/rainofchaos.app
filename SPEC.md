@@ -12,7 +12,7 @@ A static website that finds profitable Path of Exile currency-exchange round tri
   |---|---|---|
   | Address | `rainofchaos.app/poe1` | `rainofchaos.app/poe2` |
   | Hubs (routes go through these) | Chaos, Divine | Exalted, Divine (Chaos trades as an item) |
-  | Start with (toggle order; first is default) | Divine, Chaos | Exalted, Divine |
+  | Start with (toggle order; first is default) | Divine, Chaos | Divine, Exalted |
   | Default starting amounts | 1,000c, 25 div | 2,000 ex, 3 div (about 3 div each) |
   | Extra items valued at what they sell for in | Chaos | Exalted (the busiest hub) |
   | Routes per item | 3 | 3 |
@@ -42,7 +42,7 @@ A static website that finds profitable Path of Exile currency-exchange round tri
   - Elsewhere, items keep their name next to the icon.
   - An icon that starts a cell or line has no gap on its left (so it lines up with the heading above); an icon after a ratio's number (`3,096[chaos] : 1[div]`) always keeps its small gap from the number, even when it's the first icon in its cell.
   - Amounts (quantities, profits, profit per minute, gold, volumes) put the icon first: `[chaos]3,096`, `[div]+16`, `[gold]2,400`. Ratios keep their numbers first.
-- **Starting currency ("Chaos or Div mode"):** the Recommendations page (§4.1) and every item page (§4.2) show **Starting Amount:** [box] [one icon per start option: Divine | Chaos in PoE1, Exalted | Divine in PoE2], with the box sized for up to 6 digits, at the top right of the page, above the tabs, as tall as a button (the label, box and icons stretched to a button's height). It isn't in the header, since other pages don't use it. The icons are a toggle that picks the currency every route **starts and ends** in (the "base"), and profit is in that currency (§3.4). The selected icon sits on the accent colour and the other is faded. The amount is a whole number in that currency. The first option is the default (Chaos in PoE1, Exalted in PoE2). Any hub can be a start option (`starts` in `js/game.js`); PoE2's Chaos is a hub routes go through but isn't offered as a start. A saved start that isn't offered falls back to the first option. Each currency keeps its own amount (defaults above). Market Ratios is the same whatever you start with.
+- **Starting currency ("Chaos or Div mode"):** the Recommendations page (§4.1) and every item page (§4.2) show **Starting Amount:** [box] [one icon per start option: Divine | Chaos in PoE1, Divine | Exalted in PoE2], with the box sized for up to 6 digits, at the top right of the page, above the tabs, as tall as a button (the label, box and icons stretched to a button's height). It isn't in the header, since other pages don't use it. The icons are a toggle that picks the currency every route **starts and ends** in (the "base"), and profit is in that currency (§3.4). The selected icon sits on the accent colour and the other is faded. The amount is a whole number in that currency. The first option is the default (Chaos in PoE1, Exalted in PoE2). Any hub can be a start option (`starts` in `js/game.js`); PoE2's Chaos is a hub routes go through but isn't offered as a start. A saved start that isn't offered falls back to the first option. Each currency keeps its own amount (defaults above). Market Ratios is the same whatever you start with.
 - **No backend.** The site is static on S3, and all user state lives in the browser. The only server-side piece is an hourly job that writes JSON files (§6).
 
 ---

@@ -22,7 +22,7 @@ export const GAMES = {
     hubs: [EXALTED, DIVINE], // Chaos trades as an item
     end: DIVINE,
     sellTo: EXALTED, // the busiest hub
-    starts: [EXALTED, DIVINE],
+    starts: [DIVINE, EXALTED],
     defaultAmounts: { [EXALTED]: 2000, [DIVINE]: 3 }, // about 3 div each (1 div ≈ 684 ex)
     example: "CurrencyRemoveMod", // Orb of Annulment
     window: "poe2", // dark buttons with light glyphs, the hover box higher
