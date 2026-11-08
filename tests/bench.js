@@ -15,10 +15,11 @@ const FRAMES = [
 const q = new URLSearchParams(location.search), runs = +(q.get("runs") ?? 15), only = q.get("only")?.split(",");
 
 async function version(base) {
-  const [snip, rows] = await Promise.all([import(`${base}/js/snip.js`), import(`${base}/js/rows.js`)]);
+  const [snip, rows, learn] = await Promise.all([import(`${base}/js/snip.js`), import(`${base}/js/rows.js`),
+    import(`${base}/js/learn.js`).catch(() => ({}))]);
   const json = await (await fetch(`${base}/data/glyphs.json`, { cache: "no-cache" })).json();
   const catalog = await (await fetch(`${base}/data/catalog.json`, { cache: "no-cache" })).json();
-  return { snip, rows, glyphs: json.glyphs ? snip.unpackGlyphs(json) : null, model: rows.unpackModel(json.rows), nameModel: snip.unpackNames?.(json),
+  return { snip, rows, glyphs: json.glyphs ? (snip.unpackGlyphs ?? learn.unpackGlyphs)(json) : null, model: rows.unpackModel(json.rows), nameModel: snip.unpackNames?.(json),
     names: [...new Set(Object.values(catalog).map((c) => c.name).filter(Boolean))] };
 }
 const dataOf = async (file) => {

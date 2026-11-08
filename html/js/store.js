@@ -31,7 +31,10 @@ function write() {
 
 export const state = read();
 
+// How many times the state has been saved: what's worked out from it can be kept until this changes.
+export let version = 0;
 export function save() {
+  version++;
   write();
 }
 

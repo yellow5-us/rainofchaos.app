@@ -1,10 +1,7 @@
 // Snip reader tests (SPEC.md §4.7). Browser only (it decodes the PNGs in snips/): open snip.html.
 // Also builds html/data/glyphs.json and tests/lines.json from the snips: run buildGlyphs() in the console, or click the button.
-import { packModel, takeMasters } from "../html/js/rows.js";
-import {
-  AT, AT2, bannerOf, clean, cropLum, findWindow, groups, headsOf, learn, learnNames, nameOf, nameText, packGlyphs, packNames, toLum,
-  unpackGlyphs, unpackNames,
-} from "../html/js/snip.js";
+import { byGap, clean, learn, learnNames, packGlyphs, packModel, packNames, takeMasters, unpackGlyphs } from "../html/js/learn.js";
+import { AT, AT2, bannerOf, cropLum, findWindow, groups as groupsBy, headsOf, nameOf, nameText, toLum, unpackNames } from "../html/js/snip.js";
 
 let failed = 0;
 function eq(actual, expected, name) {
@@ -112,6 +109,7 @@ async function canvasOf(file) {
 // An absurd order (10000 : 1 after 69 : 1) or a misread row: the rows above the jump are the list when there are at least
 // two, without the rest or the "worse than" row; with fewer, nothing is read.
 {
+  const groups = (lines, which) => groupsBy(lines, which, null, byGap); // plain text: runs by the rows' spacing
   const rowsAt = (texts) => texts.map((text, i) => ({ text, y: 100 + 25 * i }));
   const listed = (found, kind) => found[kind]?.map((r) => `${r.want.text}:${r.have.text} ${r.stock.toLocaleString("en-US")}`) ?? null;
   const outlier = groups(rowsAt(["60:1 7,324", "68:1 830", "69:1 510", "10000:1 1", "30000:1 1", ">30000:1 1"]));

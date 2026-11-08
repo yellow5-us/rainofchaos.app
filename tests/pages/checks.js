@@ -1548,6 +1548,27 @@ export const CHECKS = {
 
   // A route the starting amount can't afford is Untradeable, tagged with how much it needs; on its item page it can't be
   // done and can't be added to Listings.
+  // Recommendations keeps its rows between draws: searching filters them, and a new starting amount works them out again.
+  tradesKept: { game: "poe1", seed: "fresh", hash: "#/recommendations", async run(t) {
+    await ready();
+    await openSections();
+    const profit = () => text(tradeRow(CHROM, "direct").cells[COL.profit]);
+    const before = profit(), search = (q) => {
+      $("#search").value = q;
+      $("#search").dispatchEvent(new w.Event("input", { bubbles: true }));
+    };
+    search("chrom");
+    await waitFor(() => !tradeRow(VIVID));
+    t.eq([!!tradeRow(CHROM, "direct"), !!tradeRow(VIVID), profit()], [true, false, before], "searching filters the rows, the same numbers");
+    search("");
+    await waitFor(() => tradeRow(VIVID));
+    const amount = $("#start-amount");
+    amount.value = String(2 * Number(amount.value));
+    amount.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => profit() !== before);
+    t.ok(profit() !== before, "a new starting amount works the rows out again", `${before} then ${profit()}`);
+  } },
+
   unaffordable: { game: "poe1", seed: "poor", hash: "#/recommendations", async run(t) {
     await ready();
     const sections = await openSections();
