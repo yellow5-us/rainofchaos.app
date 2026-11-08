@@ -211,6 +211,16 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(rates.update(state, FakeApi(pages), now), rates.MAX_PAGES)
         self.assertEqual(state["nextChangeId"], H + rates.MAX_PAGES * rates.HOUR)
 
+    def test_catch_up_stops_in_time_to_save(self):
+        now = H + 10 * rates.HOUR
+        state = rates.empty_state()
+        state["nextChangeId"] = H
+        pages = {H + i * rates.HOUR: [market("Allflame", C, D, 380, 1)] for i in range(10)}
+        left = iter([False, False, False, True])
+        self.assertEqual(rates.update(state, FakeApi(pages), now, out_of_time=lambda: next(left)), 3)
+        self.assertEqual(state["nextChangeId"], H + 3 * rates.HOUR)
+        self.assertIn("Allflame", state["leagues"])
+
 
 
 E = "Metadata/Items/Currency/CurrencyAddModToRare"  # Exalted Orb, a PoE2 hub

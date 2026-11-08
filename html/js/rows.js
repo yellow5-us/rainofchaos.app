@@ -3,73 +3,12 @@
 // with examples, this keeps one large, sharp example ("master") of each character, draws it at the row's own size,
 // and finds the string the row's format allows whose characters, placed along the row, best redraw it. Touching
 // characters and faint commas are then part of the fit, not a cut to get right first.
-import { AT, LEVELS, cropLum, findListsIn, hoverBoxOf, levels, markOf, readLines } from "./snip.js";
+import { AT, LEVELS, cropLum, findListsIn, hoverBoxOf, levels, percentiles } from "./snip.js";
 
 // ---------- masters ----------
 // A master: { ch, w, h, top, data } with data the character's grey levels (0 background, 1 text) in a w x h box
 // whose bottom edge sits `h - top` rows under the digits' bottom edge (a comma hangs below it). `H` is the
 // digit height they were taken at.
-
-// Masters from a snip whose rows are known (["363:1 1,089", ...]), read with the line reader (`glyphs`, tests/lines.json's): each
-// line that reads as a known row has one shape per character of it, in order. One of each character is kept, of
-// middling width.
-export function takeMasters(img, rows, glyphs) {
-  const lv = levels(img);
-  const found = [];
-  const heights = [], ys = [];
-  for (const { text, ln } of readLines(img, glyphs)) {
-    if (!rows.includes(text)) continue;
-    const chars = text.replace(/ /g, "").split("");
-    const comps = ln.comps.filter((c) => markOf(c, c.m) !== null);
-    if (comps.length !== chars.length) continue;
-    heights.push(ln.digitH);
-    ys.push(ln.baseline);
-    // The line the digits sit on, from those that don't hang below it (3, 4, 5, 7 and 9 do): the shapes are kept
-    // in place against it, so a hanging 3 is drawn hanging.
-    const sitting = comps.filter((c, i) => "01268".includes(chars[i])).map((c) => c.y1 + 1).sort((a, b) => a - b);
-    const bottom = sitting.length ? sitting[Math.floor(sitting.length / 2)] : ln.baseline + 1;
-    found.push({ text, chars, comps, bottom });
-  }
-  // A ratio drawn in the game's smaller size: one with a number of 5 characters or more ("366.50 : 1", "1 : 65000",
-  // over full-size stock). Its characters are kept as small masters, for ratios in that size: its own pixel shapes,
-  // not the full size's scaled down.
-  const out = [];
-  for (const { text, chars, comps, bottom } of found) {
-    const ratioText = text.split(" ")[0], small = longestIn(ratioText) >= 5, ratioLen = ratioText.length;
-    comps.forEach((c, i) => {
-      const w = c.x1 - c.x0 + 1, y0 = Math.min(c.y0, bottom - 1), h = Math.max(c.y1 + 1, bottom) - y0;
-      const data = new Float32Array(w * h);
-      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const v = (img.lum[(y0 + y) * img.w + c.x0 + x] - lv.bg) / (lv.fg - lv.bg);
-        data[y * w + x] = Math.max(0, Math.min(1, v));
-      }
-      out.push({ ch: chars[i], w, h, top: bottom - y0, data, ...(small && i < ratioLen ? { small: true } : {}) });
-    });
-  }
-  heights.sort((a, b) => a - b);
-  return { H: heights[Math.floor(heights.length / 2)], P: pitchOf(ys), masters: keep(out) };
-}
-// The row spacing among lines at heights `ys`: the gap most gaps between neighbouring lines agree with (within
-// 12%), averaged, so it's finer than a pixel. Headers and blank space between the lists don't agree. null if under
-// two gaps agree.
-function pitchOf(ys) {
-  const s = [...ys].sort((a, b) => a - b), gaps = s.slice(1).map((y, i) => y - s[i]).filter((g) => g > 0);
-  let best = null;
-  for (const g of gaps) {
-    const near = gaps.filter((x) => Math.abs(x - g) <= 0.12 * g);
-    if (near.length >= 2 && (!best || near.length > best.length)) best = near;
-  }
-  return best && best.reduce((a, b) => a + b, 0) / best.length;
-}
-// One of each character, of middling width (just under the middle).
-function keep(all) {
-  const kept = [];
-  for (const key of new Set(all.map((m) => `${m.ch}${m.small ? "s" : ""}`))) {
-    const these = all.filter((m) => `${m.ch}${m.small ? "s" : ""}` === key).sort((a, b) => a.w - b.w);
-    kept.push(these[Math.max(0, Math.floor(these.length / 2) - 1)]);
-  }
-  return kept;
-}
 
 // A master drawn at scale k (target pixels per master pixel), starting `phase` of a pixel in: each target pixel
 // is the average of the master area it covers, as the game's anti-aliasing draws it.
@@ -177,8 +116,7 @@ function stripOf(img, x0, x1, bottomY, digitH, f, minRange = 0) {
       for (let sx = Math.floor(ix0 + x / f); sx < Math.min(ix1, Math.ceil(ix0 + (x + 1) / f)); sx++) { sum += img.lum[sy * img.w + sx]; n++; }
     raw[y * w + x] = n ? sum / n : 0;
   }
-  const sorted = Float32Array.from(raw).sort();
-  const bg = sorted[Math.floor(sorted.length * 0.5)], fg = sorted[Math.floor(sorted.length * 0.98)];
+  const [bg, fg] = percentiles(Float32Array.from(raw), 0.5, 0.98);
   const range = Math.max(1, fg - bg, minRange);
   const data = raw.map((v) => Math.max(0, Math.min(1, (v - bg) / range)));
   // The panel's lines between rows run the strip's width: a pixel row lit across most of it is one, not text (the
@@ -220,7 +158,7 @@ function stripOf(img, x0, x1, bottomY, digitH, f, minRange = 0) {
   // its list's header ("3 : 1  1") has its texture as its top, and stretched it becomes shapes (0.7 to 0.9 read every
   // test snip).
   if (erased) {
-    const left = Float32Array.from(data).sort(), top = Math.max(left[Math.floor(left.length * 0.98)], 0.8 * minRange / range);
+    const top = Math.max(percentiles(Float32Array.from(data), 0.98)[0], 0.8 * minRange / range);
     if (top > 0.05) for (let i = 0; i < w * h; i++) data[i] = Math.min(1, data[i] / top);
   }
   return { w, h, data, bottom: Math.round((bottomY - iy0) * f), x0: ix0, f };
@@ -474,7 +412,7 @@ function shapesIn(st) {
   return out;
 }
 // The longest number in a ratio, in characters ("366.50" is 6); in a read row's, its places up to the stock.
-const longestIn = (ratio) => Math.max(0, ...ratio.split(/[^\d.]+/).map((w) => w.length));
+export const longestIn = (ratio) => Math.max(0, ...ratio.split(/[^\d.]+/).map((w) => w.length));
 function ratioLongest(places) {
   let text = "";
   for (const p of places) { if (p.to === "s1") break; text += p.ch; }
@@ -581,19 +519,7 @@ function entryInSlot(img, y, fx0, fx1, stockX, D, f, digitH, drawn, minRange, ar
 }
 
 // ---------- shipping the masters (data/glyphs.json's `rows`) ----------
-const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
 const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-// The masters (grey levels as bytes), the header banners and the column heads (int8), as JSON.
-// `more`: masters from other frames ({ H, P, masters }), for characters the model's own frame doesn't have.
-export function packModel({ H, P, masters, banners, heads, more = [] }) {
-  const pack = (list) => list.map(({ ch, w, h, top, small, data }) => ({ ch, w, h, top, ...(small ? { small } : {}), data: b64(Array.from(data, (v) => Math.round(v * 255))) }));
-  return {
-    H, P, masters: pack(masters),
-    banners: banners && Object.fromEntries(Object.entries(banners).map(([k, v]) => [k, b64(Array.from(v, (x) => (Math.round(x * 127) + 256) % 256))])),
-    heads: heads && Object.fromEntries(Object.entries(heads).map(([k, v]) => [k, b64(Array.from(v, (x) => (Math.round(x * 127) + 256) % 256))])),
-    more: more.map((m) => ({ H: m.H, P: m.P, masters: pack(m.masters) })),
-  };
-}
 export function unpackModel({ H, P, masters, banners, heads, more = [] }) {
   const unpack = (list) => list.map((m) => ({ ...m, data: Float32Array.from(unb64(m.data), (v) => v / 255) }));
   return {
@@ -614,10 +540,13 @@ export const findAll = (imageData, img, model, wins = null, style = "poe1", firs
 // into its slots' places: 0 and 1 Available's, 2 Competing's), so the lists can be read apart. null with no hover box.
 export function rowsAt(img, model, win, which) {
   const at = hoverBoxOf(img, win);
-  if (!at) return null;
-  const box = cropLum(img, at.x0, at.y0, at.x1 - at.x0, at.y1 - at.y0);
-  return readSlotRows(box, [model, ...(model.more ?? [])], { ...at.slots, places: which.map((k) => at.slots.places[k]) });
+  return at && rowsIn(hoverCrop(img, at), model, at.slots, which);
 }
+// The hover box's pixels (`at`, hoverBoxOf's), cut out of the frame: what rowsIn reads.
+export const hoverCrop = (img, at) => cropLum(img, at.x0, at.y0, at.x1 - at.x0, at.y1 - at.y0);
+// rowsAt's rows from the hover box cut out already (`box`, hoverCrop's) and its `slots`.
+export const rowsIn = (box, model, slots, which) =>
+  readSlotRows(box, [model, ...(model.more ?? [])], { ...slots, places: which.map((k) => slots.places[k]) });
 // Rows read apart (rowsAt's) as one read reads them: a row in `b` that's in `a` already (within 0.4 of a row spacing) is
 // the same row.
 export function joinRows(a, b, win) {

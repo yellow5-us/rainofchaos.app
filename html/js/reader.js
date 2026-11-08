@@ -3,10 +3,10 @@
 // { failed }. Then each frame ({ id, bitmap, style, last, crops, debug }) is answered with what's in it (`read`).
 // A second worker, a helper (this same script, started with { names, helper: true }), reads Competing's rows while
 // this one reads the rest, and then the I Have name while this one reads I Want; without it, this one reads it all.
-import { cropLum, findWindows, nameBoxes, nameOf, rankNames, readNames, toLum, unpackNames } from "./snip.js";
-import { findAll, joinRows, rowsAt, unpackModel } from "./rows.js";
+import { cropLum, findWindows, hoverBoxOf, nameBoxes, nameOf, rankNames, readName, toLum, unpackNames } from "./snip.js";
+import { findAll, hoverCrop, joinRows, rowsIn, unpackModel } from "./rows.js";
 
-let reader = null, helper = null, kept = null;
+let reader = null, helper = null;
 onmessage = async ({ data: m }) => {
   if (m.names) {
     try {
@@ -63,86 +63,97 @@ async function startHelper(names) {
   }
 }
 
-// A frame's pixels (and their luminance), with how long drawing, copying them out and making them grey took.
+// A frame's pixels (and their luminance), with how long drawing, copying them out and making them grey took. The canvas
+// is kept while frames stay one size, and so are grey buffers handed back (`done`): a frame's grey is 8 to 15 MB.
+let canvas = null;
+const greys = [];
 function pixelsOf(bitmap) {
-  const t0 = performance.now(), canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+  const t0 = performance.now();
+  if (canvas?.width !== bitmap.width || canvas.height !== bitmap.height) canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const g = canvas.getContext("2d", { willReadFrequently: true });
+  g.clearRect(0, 0, canvas.width, canvas.height);
   g.drawImage(bitmap, 0, 0);
   bitmap.close();
   const t1 = performance.now(), data = g.getImageData(0, 0, canvas.width, canvas.height), t2 = performance.now();
-  const img = toLum(data), t3 = performance.now();
+  const i = greys.findIndex((l) => l.length === data.width * data.height);
+  const img = toLum(data, i >= 0 ? greys.splice(i, 1)[0] : undefined), t3 = performance.now();
   return { data, img, at: t3, parts: { draw: t1 - t0, copy: t2 - t1, grey: t3 - t2 } };
 }
+const done = (img) => greys.length < 2 && greys.push(img.lum);
 // Where the window may be: its buttons as found, else where it last was (`last`, when the frame misses it).
 const windowsIn = (data, style, last) => {
   const wins = findWindows(data, style);
   return wins.length || !last ? wins : [last];
 };
 
-// The helper's part of a frame ({ bitmap, style, last }): Competing's rows in the first window's hover box ({ lines }).
-// The frame is kept for its I Have name (`side`).
-function lower({ bitmap, style, last }) {
-  kept = null;
-  const { data, img } = pixelsOf(bitmap), wins = windowsIn(data, style, last);
-  kept = img;
-  return { lines: wins.length ? rowsAt(img, reader.model, wins[0], [2]) : null };
-}
-// The helper's I Have name in the frame it read last, from the lists' place ({ place, debug }): nameIn's.
-const side = ({ place, debug }) => nameIn(kept, readNames(kept, place, reader.names).right, debug);
-// A name box's text (readNames') as the catalog's name ({ name }, null when not certain) and, with `debug`, the nearest
-// two (`rank`).
-function nameIn(img, text, debug) {
-  const seen = text && seenBox(img, text.box);
+// The helper's parts of a frame, cut out of it by the reader: Competing's rows in the first window's hover box ({ box,
+// slots }: hoverCrop's and hoverBoxOf's) as { lines }, and the I Have name ({ box, at, debug }: the box's pixels and
+// where the name box is in them) as nameIn's.
+const lower = ({ box, slots }) => ({ lines: rowsIn(box, reader.model, slots, [2]) });
+const side = ({ box, at, debug }) => nameIn(box, at, debug);
+// A name box (`b`, nameBoxes') cut out of the frame, for the helper: { box, at }, `at` the name box in the cut's terms.
+const nameCut = (img, b) => ({ box: cropLum(img, b.x0, b.y0, b.x1 - b.x0 + 1, b.y1 - b.y0 + 1),
+  at: { ...b, x0: 0, y0: 0, x1: b.x1 - b.x0, y1: b.y1 - b.y0, text: b.text && { ...b.text, at: b.text.at - b.x0 } } });
+// The name boxes of a frame from the lists' place: { left (I Want), right (I Have) }, nameBoxes', none without the names.
+const boxesOf = (img, place) => (reader.names ? nameBoxes(img, place) : {});
+// A name box (`box`, nameBoxes') as the catalog's name ({ name }, null when not certain) and, with `debug`, the nearest
+// two (`rank`). A box seen lately isn't read again.
+function nameIn(img, box, debug) {
+  const seen = box && seenBox(img, box);
   if (seen?.got && (seen.got.rank || !debug)) return seen.got;
+  const text = box && readName(img, box);
   const got = { name: (text && nameOf(text, reader.names, reader.all)) || null,
     rank: debug && (text ? rankNames(text, reader.names, reader.all, 2).map((r) => `${r.name} ${r.cost.toFixed(2)}`).join(" / ") : "no box") };
-  if (seen) seen.got = got;
+  if (text) seen.got = got;
+  else if (seen && !seen.got) boxesSeen.splice(boxesSeen.indexOf(seen), 1); // no text: nothing to remember
+  boxesSeen.length = Math.min(boxesSeen.length, NAMES_KEPT);
   return got;
 }
 // The last NAMES_KEPT name boxes read, with what they read as: a box whose every pixel is within NAME_SAME grey levels
-// of one of them, at the same size, reads as it did, without matching it against the catalog again (the game draws a
-// box alike each time; another name, or a cursor over it, changes many pixels by far more). Returns the box kept
-// ({ size, lum, got }, `got` null for a box new to it).
+// of one of them, at the same size, reads as it did, without reading it or matching it against the catalog again (the
+// game draws a box alike each time; another name, or a cursor over it, changes many pixels by far more). Returns the box
+// kept, first in the list ({ size, lum, got }, `got` null for a box new to it).
 const NAMES_KEPT = 8, NAME_SAME = 24, boxesSeen = [];
 function seenBox(img, b) {
   const size = [b.x1 - b.x0 + 1, b.y1 - b.y0 + 1], { lum } = cropLum(img, b.x0, b.y0, ...size);
   const alike = (k) => k.size[0] === size[0] && k.size[1] === size[1] && k.lum.every((v, i) => Math.abs(v - lum[i]) <= NAME_SAME);
   const i = boxesSeen.findIndex(alike), box = i >= 0 ? boxesSeen.splice(i, 1)[0] : { size, lum, got: null };
   boxesSeen.unshift(box);
-  boxesSeen.length = Math.min(boxesSeen.length, NAMES_KEPT);
   return box;
 }
 
 // One frame: { same } when a reading waiting on its second read (`crops`, keyCrops') is still there as it was; else the
 // lists (`found`, findAll's), the names as the catalog's (null when not certain; `ranks`, with `debug`, the nearest of
-// each), the reading's `crops`, and how long its parts took. The helper gets the frame at once, or after the `crops`
-// check when there's one.
+// each), the reading's `crops`, and how long its parts took. Once the window is found, the helper gets Competing's rows
+// to read, and once the lists are, the I Have name.
 async function read({ bitmap, style, last, crops, debug }) {
-  const help = helper, spare = help && await createImageBitmap(bitmap);
-  const ask = () => help({ lower: true, bitmap: spare, style, last }, [spare]);
-  let asked = spare && !crops ? ask() : null;
   const { data, img, at, parts } = pixelsOf(bitmap);
-  if (crops && sameKeys(img, crops)) { spare?.close(); return { same: true }; }
-  if (spare && !asked) asked = ask();
-  const wins = windowsIn(data, style, last);
-  let first = null;
-  if (asked && wins.length) {
-    const upper = rowsAt(img, reader.model, wins[0], [0, 1]), { lines } = await asked;
-    first = upper && lines ? joinRows(upper, lines, wins[0]) : null;
+  try {
+    if (crops && sameKeys(img, crops)) return { same: true };
+    const wins = windowsIn(data, style, last), help = helper, hover = help && wins.length && hoverBoxOf(img, wins[0]);
+    let first = null;
+    if (hover) {
+      const box = hoverCrop(img, hover), asked = help({ lower: true, box, slots: hover.slots }, [box.lum.buffer]);
+      const upper = rowsIn(hoverCrop(img, hover), reader.model, hover.slots, [0, 1]), { lines } = await asked;
+      first = upper && lines ? joinRows(upper, lines, wins[0]) : null;
+    }
+    const found = findAll(data, img, reader.model, wins, style, first);
+    const readable = (found.available && found.competing) || found.empty;
+    let names = null, ranks = false;
+    if (readable && found.place) {
+      const boxes = boxesOf(img, found.place), cut = helper && boxes.right && nameCut(img, boxes.right);
+      const there = cut && helper({ side: true, ...cut, debug }, [cut.box.lum.buffer]);
+      const left = nameIn(img, boxes.left, debug), got = there && await there;
+      const right = got && !got.failed ? got : nameIn(img, boxes.right, debug);
+      names = [left.name, right.name];
+      ranks = debug && [left.rank, right.rank];
+    }
+    const t4 = performance.now();
+    return { found, names, ranks, crops: names?.every(Boolean) ? keyCrops(img, found) : null,
+      parts: { ...parts, find: t4 - at } };
+  } finally {
+    done(img);
   }
-  const found = findAll(data, img, reader.model, wins, style, first);
-  const readable = (found.available && found.competing) || found.empty;
-  let names = null, ranks = false;
-  if (readable && found.place) {
-    const there = asked && help({ side: true, place: found.place, debug }), texts = readNames(img, found.place, reader.names);
-    const left = nameIn(img, texts.left, debug), got = there && await there;
-    const right = got && !got.failed ? got : nameIn(img, texts.right, debug);
-    names = [left.name, right.name];
-    ranks = debug && [left.rank, right.rank];
-  }
-  const t4 = performance.now();
-  return { found, names, ranks, crops: names?.every(Boolean) ? keyCrops(img, found) : null,
-    parts: { ...parts, find: t4 - at } };
 }
 
 // What a reading rests on, as pixels: the two name boxes and the first row (its best price) of each list read. A later

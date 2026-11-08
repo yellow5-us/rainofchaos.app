@@ -474,10 +474,11 @@ export function neededStart(ratios, item, route, method, start, perStep = {}, ba
 }
 
 // One result per route, best first; routes with missing ratios sort last. Every route uses `method`, except steps
-// overridden in perStepByRoute[routeId], and with `estimate`, steps with no price scanned (runRoute).
-export function allResults(ratios, item, start, method, perStepByRoute = {}, base = DIVINE, estimate = false) {
+// overridden in perStepByRoute[routeId], and with `estimate`, steps with no price scanned (runRoute). Only the routes
+// `listed` keeps are worked out.
+export function allResults(ratios, item, start, method, perStepByRoute = {}, base = DIVINE, estimate = false, listed = () => true) {
   // No step trades a currency for itself (SPEC.md §3.1), e.g. Div → Chaos → Chaos → Div when the item is Chaos.
-  const routes = routesFor(base).filter((r) => [base, ...r.path(item)].every((x, i, p) => x !== p[i - 1]));
+  const routes = routesFor(base).filter((r) => [base, ...r.path(item)].every((x, i, p) => x !== p[i - 1]) && listed(r));
   const results = routes.map((r) => runRoute(ratios, item, r, method, start, perStepByRoute[r.id], base, [], estimate));
   const sortRank = (r) => (r.missing || r.blocked || r.unaffordable ? -Infinity : r.rank);
   return results.sort((x, y) => (x.missing ? 1 : 0) - (y.missing ? 1 : 0) || sortRank(y) - sortRank(x));

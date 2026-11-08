@@ -18,6 +18,7 @@ HOUR = 3600
 DAYS = 1                       # keep pairs that traded within this many days
 LOOKBACK = DAYS * 24 * HOUR    # also the window for the dayA/dayB totals
 MAX_PAGES = 30                 # catch-up limit per run
+SAVE_WITH = 60                 # seconds a run keeps for its last fetch and the saves: a catch-up stops with less left
 RECENT_HOURS = 4               # window for the "recent" volume totals (fill-time estimates)
 
 CHAOS = "CurrencyRerollRare"
@@ -183,12 +184,13 @@ def history_file(game, hour, leagues):
     return {"game": game, "hour": hour, "fields": HISTORY_FIELDS, "leagues": leagues}
 
 
-def update(state, fetch, now, hubs=BASES, hours=None):
+def update(state, fetch, now, hubs=BASES, hours=None, out_of_time=lambda: False):
     """Fetch every finished hour since state["nextChangeId"] and merge it. Returns pages fetched.
-    Each merged hour is also put in `hours` ({hour: history_hour(page)}) when given."""
+    Each merged hour is also put in `hours` ({hour: history_hour(page)}) when given. Stops early once `out_of_time()`,
+    keeping what it merged; the next run carries on from there."""
     change_id = state.get("nextChangeId") or (now // HOUR * HOUR - LOOKBACK)
     pages = 0
-    while pages < MAX_PAGES:
+    while pages < MAX_PAGES and not out_of_time():
         page = fetch(change_id)
         next_id = page.get("next_change_id")
         if not next_id or next_id == change_id:
@@ -291,6 +293,9 @@ def handler(event, context):
                 ok = False
         return ok
 
+    def out_of_time():
+        return context is not None and context.get_remaining_time_in_millis() < SAVE_WITH * 1000
+
     result, failed = {}, []
     for game, cfg in GAMES.items():
         if event.get("games") and game not in event["games"]:
@@ -302,7 +307,8 @@ def handler(event, context):
                 # Re-read the last LOOKBACK, e.g. after a change in what's tracked. Newer data is kept.
                 state["nextChangeId"] = None
             hours = {}
-            pages = update(state, lambda cid: fetch_page(cid, user_agent, cfg["realm"]), int(time.time()), cfg["hubs"], hours)
+            pages = update(state, lambda cid: fetch_page(cid, user_agent, cfg["realm"]), int(time.time()), cfg["hubs"], hours,
+                           out_of_time)
             put(state_key, state, "no-store")
             put(rates_key, rates_view(state), "max-age=300")
         except Exception as e:  # noqa: BLE001 - one game failing mustn't stop the others

@@ -10,8 +10,8 @@ Read the relevant section before changing behaviour, and update SPEC.md in the s
   `js/calc.js` (route math), `js/undercut.js` (how fast orders are posted ahead and bought, for fill times), `js/rates.js` (rates.json helpers), `js/store.js` (localStorage
   `rainofchaos:v1`), `js/history.js` (2 weeks of list reads in IndexedDB, for analysis), `js/app.js` (pages), `js/items.js` (ids, names, icons, gold, the game's hub
   currencies), `js/game.js` (per-game config: hubs, data files, starting options, storage key),
-  `js/snip.js` (finds the game's window in a frame and the lists' places in it; its line reader, for learning the font;
-  and the currency names), `js/rows.js` (reads each row in its slot by drawing reference characters at the row's size; the
+  `js/snip.js` (finds the game's window in a frame and the lists' places in it, and the currency names), `js/learn.js` (builds
+  `data/glyphs.json` for tests/snip.html: the line reader, learning the font; never loaded by the site), `js/rows.js` (reads each row in its slot by drawing reference characters at the row's size; the
   references are in `data/glyphs.json`, `rows`), `js/reader.js` (the price reader: a worker that reads each watched frame with
   those two, so the page never waits on a read, sharing each read with a helper worker of itself), `js/debug/watch.js` (`?debug` only: what watching the game sees).
 - `tests/`: the browser and JavaScriptCore tests (they import `../html/js/…`), the page checks and the test frames

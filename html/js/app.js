@@ -545,25 +545,37 @@ const modeToggle = (mode) => `<p class="mode-pick"><span class="mode-toggle" rol
 // After "nothing scanned" (Recommendations, Market Ratios): a link that opens the header's import window.
 const importHint = () => `Use <a href="#" data-import>Import Market Ratios</a> at the top right to read them from the game.`;
 
-// Recommendations: the starting amount, the Competitive / Instant / Estimated selector, then the tables.
-function summaryPage(mode) {
+// Every route of every item, each on its own row (SPEC.md §4.1): in Competitive and Instant Trading the routes whose every
+// price is scanned, in Estimated Trading the others (only those are worked out). Routes the starting amount can't afford
+// are listed, as Untradeable. Kept until a save, the league, the starting amount or the mode changes, or the minute
+// turns (scans age): searching, sorting and opening a table only filter and sort them.
+let summaryKept = null;
+function summaryRows(mode) {
+  const id = [store.version, league(), baseId(), start(), mode, Math.floor(Date.now() / 60000)].join("|");
+  if (summaryKept?.id === id) return summaryKept.rows;
   const { method, estimate = false } = MODES[mode];
-  // Every route of every item, each on its own row (SPEC.md §4.1): in Competitive and Instant Trading the routes whose every
-  // price is scanned, in Estimated Trading the others. Routes the starting amount can't afford aren't listed.
-  const now = ratios(), all = [];
+  const now = ratios(), rows = [];
   for (const item of tradeItems()) {
-    for (const result of allResults(now, item.id, start(), method, {}, baseId(), estimate)) {
-      const keys = routeKeys(item.id, result.route);
-      if (keys.every(isScanned) !== estimate) all.push({ item, result, key: `${item.id}|${result.route.id}`, tag: keysTag(keys, estimate).trim() });
+    const listed = (route) => routeKeys(item.id, route).every(isScanned) !== estimate;
+    for (const result of allResults(now, item.id, start(), method, {}, baseId(), estimate, listed)) {
+      rows.push({ item, result, key: `${item.id}|${result.route.id}` });
     }
   }
+  summaryKept = { id, rows };
+  return rows;
+}
+
+// Recommendations: the starting amount, the Competitive / Instant / Estimated selector, then the tables.
+function summaryPage(mode) {
+  const { estimate = false } = MODES[mode];
+  const all = summaryRows(mode);
   const rows = all.filter((r) => matches(r.item.name));
   sortRows(rows); // every table uses the chosen sort
 
-  const row = ({ item, result, key, tag }) => {
+  const row = ({ item, result, key }) => {
     const link = `<a href="#/item/${item.id}/${mode}" data-pick-route="${item.id}|${result.route.id}">${titled(item.id)}</a>`;
     // The route's scan age tag (its oldest price), in a narrow column of its own so the tags line up.
-    const scanned = `<td class="age">${tag}</td>`;
+    const scanned = `<td class="age">${keysTag(routeKeys(item.id, result.route), estimate).trim()}</td>`;
     if (result.missing || result.unaffordable) {
       const tag = result.missing ? missingTag(result) : needsTag(item, result, {}, estimate);
       return `<tr class="losing" data-row="${key}"><td>${link}</td>${scanned}<td colspan="5">${tag}</td></tr>`;
@@ -1761,10 +1773,22 @@ function selectLeague(name) {
 const ESTIMATE_HOURS = 4;
 // How fast orders are posted ahead of a row's best price (SPEC.md §3.6), in what they offer per hour, measured from its
 // reads of the last hour; null when it isn't measured.
-const undercutFor = (name, key) => undercutRate(store.readsOf(name, key), Date.now());
+const undercutFor = (name, key) => measured(name, key, undercutRate);
 // How fast a row's orders are bought (SPEC.md §3.6), in what they offer per hour, measured from its reads of the last
 // hour; null when it isn't measured.
-const boughtFor = (name, key) => boughtRate(store.readsOf(name, key), Date.now());
+const boughtFor = (name, key) => measured(name, key, boughtRate);
+// A row's rate (undercutRate or boughtRate) from its reads, worked out once per read and minute: most routes have a leg
+// on the same few rows, Chaos ↔ Divine above all.
+const rateKept = new Map();
+function measured(name, key, rate) {
+  const reads = store.readsOf(name, key), minute = Math.floor(Date.now() / 60000);
+  const kept = rateKept.get(rate)?.get(`${name}|${key}`);
+  if (kept?.reads === reads && kept.minute === minute) return kept.value;
+  const value = rate(reads, Date.now());
+  if (!rateKept.has(rate)) rateKept.set(rate, new Map());
+  rateKept.get(rate).set(`${name}|${key}`, { reads, minute, value });
+  return value;
+}
 // A row's orders as last read from the game (SPEC.md §3.2a): only while they're under BOOK_FOR old and their best
 // price is still the row's ratio (cleared, or the price read otherwise since, they no longer count).
 const BOOK_FOR = 60 * 60 * 1000;
